@@ -1,77 +1,70 @@
 // src/merge_odds.ts
 
-/* eslint-disable no-console */
-
 import { RawPick, MergedPick, SgoPlayerPointsOdds } from "./types";
 import { americanToProb, devigTwoWay, probToAmerican } from "./odds_math";
 import { fetchSgoPlayerPointsOdds } from "./fetch_sgo_odds";
 
-const MAX_LINE_DIFF = 0.75; // max allowed difference between PP line and SGO line
-const MAX_JUICE = 200; // skip crazy-juiced SGO lines (|odds| > 200)
-
-// Normalize "KEVIN_DURANT_1_NBA" → "kevin durant"
-function normalizeSgoPlayerId(id: string): string {
-  const noSuffix = id.replace(/_[0-9]+_NBA$/i, "");
-  return noSuffix.replace(/_/g, " ").toLowerCase().trim();
-}
-
-// "Kevin Durant" → "kevin durant"
 function normalizeName(name: string): string {
-  return name.toLowerCase().replace(/\s+/g, " ").trim();
+  return name.trim().toLowerCase();
 }
 
-// Map SGO stat string to your StatCategory label used on RawPick.stat
-function normalizeSgoStat(stat: string): string {
-  const s = stat.toLowerCase();
-  if (s === "points") return "points";
-  if (s === "rebounds") return "rebounds";
-  if (s === "assists") return "assists";
-  if (s === "threepointersmade") return "threes";
-  if (s === "blocks") return "blocks";
-  if (s === "steals") return "steals";
-  if (s === "turnovers") return "turnovers";
-  if (s === "fantasyscore") return "fantasy_score";
-  if (s === "points+rebounds+assists") return "pra";
-  if (s === "points+rebounds") return "points_rebounds";
-  if (s === "points+assists") return "points_assists";
-  if (s === "rebounds+assists") return "rebounds_assists";
-  if (s === "blocks+steals" || s === "stocks") return "stocks";
-  return s;
+// Convert SGO player IDs like "KEVIN_DURANT_1_NBA" -> "kevin durant"
+function normalizeSgoPlayerId(id: string): string {
+  const parts = id.split("_");
+  if (parts.length <= 2) {
+    return normalizeName(id);
+  }
+  // Drop number + league suffix
+  const nameParts = parts.slice(0, -2);
+  return normalizeName(nameParts.join(" "));
+}
+
+// Max allowed difference between SGO line and PrizePicks line
+const MAX_LINE_DIFF = 3; // points
+
+// Max allowed absolute juice magnitude (ignore prices worse than -250)
+const MAX_JUICE = 150;
+
+function isJuiceTooExtreme(american: number): boolean {
+  // american is negative for favorites, positive for dogs.
+  // We only care about steep negative favorites here.
+  return american <= -MAX_JUICE;
 }
 
 function findBestMatchForPick(
   pick: RawPick,
-  sgoOdds: SgoPlayerPointsOdds[]
+  sgoMarkets: SgoPlayerPointsOdds[]
 ): SgoPlayerPointsOdds | null {
-  const pickNameNorm = normalizeName(pick.player);
-  const pickStatNorm = pick.stat; // already normalized StatCategory
-  const pickLine = pick.line;
+  const targetName = normalizeName(pick.player);
 
-  let best: SgoPlayerPointsOdds | null = null;
-  let bestScore = Number.POSITIVE_INFINITY;
+  const candidates = sgoMarkets.filter((o) => {
+    const sgoName = normalizeSgoPlayerId(o.player);
+    return sgoName === targetName && o.stat === "points";
+  });
 
-  for (const o of sgoOdds) {
-    const sgoNameNorm = normalizeSgoPlayerId(o.player);
-    const sgoStatNorm = normalizeSgoStat(o.stat);
+  if (!candidates.length) return null;
 
-    if (sgoNameNorm !== pickNameNorm) continue;
-    if (sgoStatNorm !== pickStatNorm) continue;
+  let best = candidates[0];
+  let bestDiff = Math.abs(best.line - pick.line);
 
-    const lineDiff = Math.abs(o.line - pickLine);
-    if (!Number.isFinite(lineDiff) || lineDiff > MAX_LINE_DIFF) continue;
-
-    if (
-      Math.abs(o.overOdds) > MAX_JUICE ||
-      Math.abs(o.underOdds) > MAX_JUICE
-    ) {
-      continue;
+  for (const c of candidates.slice(1)) {
+    const diff = Math.abs(c.line - pick.line);
+    if (diff < bestDiff) {
+      best = c;
+      bestDiff = diff;
     }
+  }
 
-    const score = lineDiff;
-    if (score < bestScore) {
-      bestScore = score;
-      best = o;
-    }
+  // Reject if book line and PP line are too far apart
+  if (bestDiff > MAX_LINE_DIFF) return null;
+
+  // Reject if juice is extreme on either side
+  if (typeof best.overOdds === "number" && isJuiceTooExtreme(best.overOdds)) {
+    return null;
+  }
+
+  if (typeof best.underOdds === "number" && isJuiceTooExtreme(best.underOdds)) {
+    return null;
   }
 
   return best;
@@ -80,26 +73,45 @@ function findBestMatchForPick(
 export async function mergeOddsWithProps(
   rawPicks: RawPick[]
 ): Promise<MergedPick[]> {
-  console.log("mergeOddsWithProps: fetching SGO odds...");
-  const sgoMarkets = await fetchSgoPlayerPointsOdds();
+  // Live SGO only; no stub odds
+  const sgoMarketsLive = await fetchSgoPlayerPointsOdds();
+
+  if (sgoMarketsLive.length === 0) {
+    // eslint-disable-next-line no-console
+    console.log(
+      "mergeOddsWithProps: no SGO markets available; returning 0 merged picks"
+    );
+    return [];
+  }
+
+  // eslint-disable-next-line no-console
   console.log(
-    `mergeOddsWithProps: using ${sgoMarkets.length} live SGO markets (multi-stat)`
+    `mergeOddsWithProps: using ${sgoMarketsLive.length} live SGO markets`
   );
 
+  const sgoMarkets = sgoMarketsLive;
   const merged: MergedPick[] = [];
 
   for (const pick of rawPicks) {
-    // Hard filter: skip demons, goblins, promos everywhere
-    if (pick.isDemon || pick.isGoblin || pick.isPromo) {
+    // NEW: future promo guard – harmless until you add flags on RawPick
+    const anyPick = pick as any;
+    if (anyPick.isDemon || anyPick.isGoblin || anyPick.isPromo) {
       continue;
     }
+
+    if (pick.stat !== "points" || pick.league !== "NBA") continue;
 
     const match = findBestMatchForPick(pick, sgoMarkets);
     if (!match) continue;
 
-    const overProb = americanToProb(match.overOdds);
-    const underProb = americanToProb(match.underOdds);
-    const [trueOverProb, trueUnderProb] = devigTwoWay(overProb, underProb);
+    const overProbVigged = americanToProb(match.overOdds);
+    const underProbVigged = americanToProb(match.underOdds);
+
+    const [trueOverProb, trueUnderProb] = devigTwoWay(
+      overProbVigged,
+      underProbVigged
+    );
+
     const fairOverOdds = probToAmerican(trueOverProb);
     const fairUnderOdds = probToAmerican(trueUnderProb);
 
@@ -114,8 +126,5 @@ export async function mergeOddsWithProps(
     });
   }
 
-  console.log(
-    `mergeOddsWithProps: merged ${merged.length} picks with SGO odds`
-  );
   return merged;
 }
