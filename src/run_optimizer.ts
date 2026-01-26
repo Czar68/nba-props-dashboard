@@ -1,5 +1,7 @@
 // src/run_optimizer.ts
 
+/* eslint-disable no-console */
+
 import fs from "fs";
 import path from "path";
 
@@ -69,21 +71,23 @@ function buildCardsForSize(
     // If you want to enforce correlation caps later, you can re‑enable:
     // if (!isCardWithinCorrelationLimits(window)) continue;
 
-    // evaluateFlexCard consumes legs as { pick, side }
     const cardLegs = window.map((pick) => ({
       pick,
       side: "over" as const,
     }));
 
-    // Cast to the expected leg type for evaluateFlexCard
-    const result = evaluateFlexCard(flexType, cardLegs as any, 1);
+    const result = evaluateFlexCard(flexType, cardLegs, 1);
     cards.push(result);
   }
 
   return cards;
 }
 
-function writeLegsCsv(legs: EvPick[], outPath: string): void {
+function writeLegsCsv(
+  legs: EvPick[],
+  outPath: string,
+  runTimestamp: string
+): void {
   const headers = [
     "id",
     "player",
@@ -98,6 +102,7 @@ function writeLegsCsv(legs: EvPick[], outPath: string): void {
     "trueProb",
     "edge",
     "legEv",
+    "runTimestamp",
   ];
   const lines = [headers.join(",")];
 
@@ -116,6 +121,7 @@ function writeLegsCsv(legs: EvPick[], outPath: string): void {
       leg.trueProb,
       leg.edge,
       leg.legEv,
+      runTimestamp,
     ].map((v) => {
       if (v === null || v === undefined) return "";
       const s = String(v);
@@ -128,8 +134,19 @@ function writeLegsCsv(legs: EvPick[], outPath: string): void {
   fs.writeFileSync(outPath, lines.join("\n"), "utf8");
 }
 
-function writeCardsCsv(cards: CardEvResult[], outPath: string): void {
-  const headers = ["flexType", "cardEv", "winProbCash", "winProbAny", "legsSummary"];
+function writeCardsCsv(
+  cards: CardEvResult[],
+  outPath: string,
+  runTimestamp: string
+): void {
+  const headers = [
+    "flexType",
+    "cardEv",
+    "winProbCash",
+    "winProbAny",
+    "legsSummary",
+    "runTimestamp",
+  ];
   const lines = [headers.join(",")];
 
   for (const card of cards) {
@@ -146,6 +163,7 @@ function writeCardsCsv(cards: CardEvResult[], outPath: string): void {
       card.winProbCash,
       card.winProbAny,
       legsSummary,
+      runTimestamp,
     ].map((v) => {
       if (v === null || v === undefined) return "";
       const s = String(v);
@@ -159,16 +177,15 @@ function writeCardsCsv(cards: CardEvResult[], outPath: string): void {
 }
 
 async function run(): Promise<void> {
+  const runTimestamp = new Date().toISOString();
+
   const raw = await fetchPrizePicksRawProps();
-  // eslint-disable-next-line no-console
   console.log("Raw PrizePicks props:", raw.length);
 
   const merged = await mergeOddsWithProps(raw);
-  // eslint-disable-next-line no-console
   console.log("Merged picks:", merged.length);
 
-  const withEv = calculateEvForMergedPicks(merged);
-  // eslint-disable-next-line no-console
+  const withEv = await calculateEvForMergedPicks(merged);
   console.log("Ev picks:", withEv.length);
 
   // ---- EV-based filtering ----
@@ -187,29 +204,28 @@ async function run(): Promise<void> {
     return true;
   });
 
-  // eslint-disable-next-line no-console
   console.log(
     `Filtered legs: ${filtered.length} (from ${withEv.length}) with edge >= ${MIN_EDGE}`
   );
 
   // ---- Persist filtered legs to JSON ----
   const legsOutPath = path.join(process.cwd(), "prizepicks-legs.json");
-  fs.writeFileSync(legsOutPath, JSON.stringify(filtered, null, 2), "utf8");
-  // eslint-disable-next-line no-console
+  fs.writeFileSync(
+    legsOutPath,
+    JSON.stringify({ runTimestamp, legs: filtered }, null, 2),
+    "utf8"
+  );
   console.log(`Wrote ${filtered.length} legs to ${legsOutPath}`);
 
   // ---- Also write CSV for Google Sheets ----
   const legsCsvPath = path.join(process.cwd(), "prizepicks-legs.csv");
-  writeLegsCsv(filtered, legsCsvPath);
-  // eslint-disable-next-line no-console
+  writeLegsCsv(filtered, legsCsvPath, runTimestamp);
   console.log(`Wrote ${filtered.length} legs to ${legsCsvPath}`);
 
   // ---- Log top EV legs for quick sanity check ----
   const topLegs = [...filtered].sort((a, b) => b.edge - a.edge).slice(0, 10);
-  // eslint-disable-next-line no-console
   console.log("Top EV legs (after filtering):");
   for (const leg of topLegs) {
-    // eslint-disable-next-line no-console
     console.log({
       player: leg.player,
       stat: leg.stat,
@@ -233,19 +249,20 @@ async function run(): Promise<void> {
   const allCards = [...cards5, ...cards6];
 
   const cardsOutPath = path.join(process.cwd(), "prizepicks-cards.json");
-  fs.writeFileSync(cardsOutPath, JSON.stringify(allCards, null, 2), "utf8");
-  // eslint-disable-next-line no-console
+  fs.writeFileSync(
+    cardsOutPath,
+    JSON.stringify({ runTimestamp, cards: allCards }, null, 2),
+    "utf8"
+  );
   console.log(`Wrote ${allCards.length} cards to ${cardsOutPath}`);
 
   // ---- Also write cards CSV for Google Sheets ----
   const cardsCsvPath = path.join(process.cwd(), "prizepicks-cards.csv");
-  writeCardsCsv(allCards, cardsCsvPath);
-  // eslint-disable-next-line no-console
+  writeCardsCsv(allCards, cardsCsvPath, runTimestamp);
   console.log(`Wrote ${allCards.length} cards to ${cardsCsvPath}`);
 }
 
 run().catch((err) => {
-  // eslint-disable-next-line no-console
   console.error("run_optimizer failed", err);
   process.exit(1);
 });

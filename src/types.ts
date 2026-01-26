@@ -18,7 +18,18 @@ export type StatCategory =
   | "fantasy_score"
   | "points_rebounds"
   | "points_assists"
-  | "rebounds_assists";
+  | "rebounds_assists"
+  // NFL stats
+  | "pass_yards"
+  | "pass_attempts"
+  | "pass_completions"
+  | "pass_tds"
+  | "interceptions"
+  | "rush_yards"
+  | "rush_attempts"
+  | "rush_rec_yards"
+  | "rec_yards"
+  | "receptions";
 
 // Narrow stat name alias used by normalize_stats.ts
 export type StatType =
@@ -76,7 +87,6 @@ export interface MergedPick {
   opponent: string | null;
   stat: StatCategory;
   line: number;
-
   projectionId: string;
   gameId: string | null;
   startTime: string | null;
@@ -96,7 +106,6 @@ export interface MergedPick {
 }
 
 // EV / cards inputs and outputs
-
 export type FlexType = "flex5" | "flex6" | "power2" | "power3" | "power4";
 
 export interface CardLegInput {
@@ -126,12 +135,10 @@ export interface EvPick {
   projectionId: string;
   gameId: string | null;
   startTime: string | null;
-
   outcome: "over" | "under";
   trueProb: number;
   fairOdds: number;
   edge: number;
-
   book: string | null;
   overOdds: number | null;
   underOdds: number | null;
@@ -173,6 +180,7 @@ export interface CardEvResult {
 
 // Card types used by Sheets export
 export type CardMode = "flex" | "power";
+
 export type CardSize = 2 | 3 | 4 | 5 | 6;
 
 export interface CardLeg {
