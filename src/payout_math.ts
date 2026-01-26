@@ -40,7 +40,6 @@ export function computeCardEvFromDistribution(
     if (profit > 0) {
       winProbCash += probNum;
     }
-
     if (returnAmount > 0) {
       winProbAny += probNum;
     }

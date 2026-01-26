@@ -6,6 +6,7 @@ import {
   EvPick,
   FlexType,
 } from "./types";
+
 import {
   getPayoutSchedule,
   computeCardEvFromDistribution,
@@ -20,12 +21,12 @@ export function buildHitDistribution(
   for (const leg of legs) {
     const p = leg.pick.trueProb;
     const q = 1 - p;
-
     const next: CardHitDistribution = {};
 
     for (const [kStr, prob] of Object.entries(dist)) {
       const k = Number(kStr);
       if (!Number.isFinite(k)) continue;
+
       const probNum = Number(prob);
       if (!Number.isFinite(probNum) || probNum <= 0) continue;
 

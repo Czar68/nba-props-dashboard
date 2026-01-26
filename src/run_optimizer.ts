@@ -1,3 +1,5 @@
+// src/run_optimizer.ts
+
 /* eslint-disable no-console */
 import fs from "fs";
 import path from "path";
@@ -7,21 +9,21 @@ import { calculateEvForMergedPicks } from "./calculate_ev";
 import { evaluateFlexCard } from "./card_ev";
 import { CardEvResult, EvPick, FlexType } from "./types";
 
-// Simple knobs for filtering / composition
-// Minimum edge per leg (as a fraction, e.g. 0.01 = 1%)
-const MIN_EDGE_PER_LEG = 0.01;
-// Minimum card EV as a fraction of stake (e.g. 0.03 = +3% ROE). Currently not enforced; wired for future use.
-const MIN_CARD_EV_FRACTION = 0.0;
+// --------- Tuning knobs ---------
+
+// Minimum edge per leg (fraction, e.g. 0.02 = +2% edge)
+const MIN_EDGE_PER_LEG = 0.02;
+
+// Minimum card EV as a fraction of stake (e.g. 0.04 = +4% ROE).
+// NOTE: this is now enforced below when filtering cards.
+const MIN_CARD_EV_FRACTION = 0.04;
 
 // At most 1 leg per player overall
 const MAX_LEGS_PER_PLAYER = 1;
 
-// --- Timezone helpers (EST/EDT via America/New_York) ---
+// ---- Timezone helpers (EST/EDT via America/New_York) ----
 
 function toEasternIsoString(date: Date): string {
-  // Use Intl with IANA zone so EST/EDT is handled correctly.
-  // We serialize as "YYYY-MM-DDTHH:mm:ss (America/New_York)" style ISO-ish string
-  // suitable for Sheets display, not for strict machine parsing.
   const formatter = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
     year: "numeric",
@@ -33,10 +35,12 @@ function toEasternIsoString(date: Date): string {
     hour12: false,
   });
 
-  const parts = formatter.formatToParts(date).reduce<Record<string, string>>((acc, p) => {
-    if (p.type !== "literal") acc[p.type] = p.value;
-    return acc;
-  }, {});
+  const parts = formatter
+    .formatToParts(date)
+    .reduce<Record<string, string>>((acc, p) => {
+      if (p.type !== "literal") acc[p.type] = p.value;
+      return acc;
+    }, {});
 
   const year = parts.year ?? "0000";
   const month = parts.month ?? "01";
@@ -95,7 +99,11 @@ function isCardWithinCorrelationLimits(window: EvPick[]): boolean {
   return true;
 }
 
-function buildCardsForSize(legs: EvPick[], size: number, flexType: FlexType): CardEvResult[] {
+function buildCardsForSize(
+  legs: EvPick[],
+  size: number,
+  flexType: FlexType
+): CardEvResult[] {
   const windows = buildSlidingWindows(legs, size);
   const cards: CardEvResult[] = [];
 
@@ -103,13 +111,10 @@ function buildCardsForSize(legs: EvPick[], size: number, flexType: FlexType): Ca
     // If you want to enforce correlation caps later, re-enable this:
     // if (!isCardWithinCorrelationLimits(window)) continue;
 
-    const cardLegs = window.map(
-      (pick) =>
-        ({
-          pick,
-          side: "over" as const,
-        }) // currently only "over" sides
-    );
+    const cardLegs = window.map((pick) => ({
+      pick,
+      side: "over" as const,
+    }));
 
     const result = evaluateFlexCard(flexType, cardLegs, 1);
     cards.push(result);
@@ -120,7 +125,11 @@ function buildCardsForSize(legs: EvPick[], size: number, flexType: FlexType): Ca
 
 // ---- CSV writers ----
 
-function writeLegsCsv(legs: EvPick[], outPath: string, runTimestamp: string): void {
+function writeLegsCsv(
+  legs: EvPick[],
+  outPath: string,
+  runTimestamp: string
+): void {
   const headers = [
     "id",
     "player",
@@ -157,12 +166,11 @@ function writeLegsCsv(legs: EvPick[], outPath: string, runTimestamp: string): vo
       leg.edge,
       leg.legEv,
       runTimestamp,
-    ]
-      .map((v) => {
-        if (v === null || v === undefined) return "";
-        const s = String(v);
-        return s.includes(",") ? s.replace(/,/g, ";") : s;
-      });
+    ].map((v) => {
+      if (v === null || v === undefined) return "";
+      const s = String(v);
+      return s.includes(",") ? s.replace(/,/g, ";") : s;
+    });
 
     lines.push(row.join(","));
   }
@@ -170,15 +178,29 @@ function writeLegsCsv(legs: EvPick[], outPath: string, runTimestamp: string): vo
   fs.writeFileSync(outPath, lines.join("\n"), "utf8");
 }
 
-function writeCardsCsv(cards: CardEvResult[], outPath: string, runTimestamp: string): void {
-  const headers = ["flexType", "cardEv", "winProbCash", "winProbAny", "legsSummary", "runTimestamp"];
+function writeCardsCsv(
+  cards: CardEvResult[],
+  outPath: string,
+  runTimestamp: string
+): void {
+  const headers = [
+    "flexType",
+    "cardEv",
+    "winProbCash",
+    "winProbAny",
+    "legsSummary",
+    "runTimestamp",
+  ];
 
   const lines: string[] = [];
   lines.push(headers.join(","));
 
   for (const card of cards) {
     const legsSummary = card.legs
-      .map((leg) => `${leg.pick.player} ${leg.pick.stat} ${leg.pick.line} ${leg.side}`)
+      .map(
+        (leg) =>
+          `${leg.pick.player} ${leg.pick.stat} ${leg.pick.line} ${leg.side}`
+      )
       .join(" | ");
 
     const row = [
@@ -203,7 +225,6 @@ function writeCardsCsv(cards: CardEvResult[], outPath: string, runTimestamp: str
 // ---- Main runner ----
 
 async function run(): Promise<void> {
-  // Use Eastern-local timestamp for all persisted outputs (Sheets will see this).
   const runTimestamp = toEasternIsoString(new Date());
 
   const raw = await fetchPrizePicksRawProps();
@@ -218,11 +239,11 @@ async function run(): Promise<void> {
   console.log("---- EV-based filtering ----");
 
   // 1) Filter by minimum edge per leg
-  let filtered: EvPick[] = withEv.filter((leg) => leg.edge >= MIN_EDGE_PER_LEG);
+  const legsAfterEdge = withEv.filter((leg) => leg.edge >= MIN_EDGE_PER_LEG);
 
   // 2) Enforce max legs per player global across all cards
   const counts = new Map<string, number>();
-  filtered = filtered.filter((leg) => {
+  const filtered: EvPick[] = legsAfterEdge.filter((leg) => {
     const key = leg.player;
     const count = counts.get(key) ?? 0;
     if (count + 1 > MAX_LEGS_PER_PLAYER) return false;
@@ -231,7 +252,10 @@ async function run(): Promise<void> {
   });
 
   console.log(
-    `Filtered legs: ${filtered.length} from ${withEv.length} with edge >= ${MIN_EDGE_PER_LEG}`
+    `Legs after edge filter (>= ${MIN_EDGE_PER_LEG}): ${legsAfterEdge.length} of ${withEv.length}`
+  );
+  console.log(
+    `Legs after player cap (<= ${MAX_LEGS_PER_PLAYER} per player): ${filtered.length} of ${legsAfterEdge.length}`
   );
 
   // ---- Persist filtered legs to JSON ----
@@ -254,7 +278,9 @@ async function run(): Promise<void> {
   for (const leg of topLegs) {
     console.log(
       `  player=${leg.player}, stat=${leg.stat}, line=${leg.line}, ` +
-        `trueProb=${Number.isFinite(leg.trueProb) ? leg.trueProb.toFixed(3) : leg.trueProb}, ` +
+        `trueProb=${
+          Number.isFinite(leg.trueProb) ? leg.trueProb.toFixed(3) : leg.trueProb
+        }, ` +
         `edge=${Number.isFinite(leg.edge) ? leg.edge.toFixed(3) : leg.edge}, ` +
         `overOdds=${leg.overOdds}, underOdds=${leg.underOdds}, book=${leg.book}, ` +
         `team=${leg.team}, opponent=${leg.opponent}`
@@ -267,12 +293,20 @@ async function run(): Promise<void> {
   const cards5 = buildCardsForSize(sortedByEdge, 5, "flex5");
   const cards6 = buildCardsForSize(sortedByEdge, 6, "flex6");
 
-  let allCards: CardEvResult[] = [...cards5, ...cards6];
+  const cardsBeforeEvFilter: CardEvResult[] = [...cards5, ...cards6];
+  console.log(
+    `Cards before EV filter: ${cardsBeforeEvFilter.length} (from ${filtered.length} legs)`
+  );
 
-  // Optional: enforce a minimum card EV fraction threshold (currently MIN_CARD_EV_FRACTION)
-  if (MIN_CARD_EV_FRACTION > 0) {
-    allCards = allCards.filter((card) => card.cardEv >= MIN_CARD_EV_FRACTION);
-  }
+  // Enforce a minimum card EV fraction threshold
+  const allCards: CardEvResult[] =
+    MIN_CARD_EV_FRACTION > 0
+      ? cardsBeforeEvFilter.filter((card) => card.cardEv >= MIN_CARD_EV_FRACTION)
+      : cardsBeforeEvFilter;
+
+  console.log(
+    `Cards after EV filter (cardEv >= ${MIN_CARD_EV_FRACTION}): ${allCards.length} of ${cardsBeforeEvFilter.length}`
+  );
 
   const cardsOutPath = path.join(process.cwd(), "prizepicks-cards.json");
   fs.writeFileSync(
