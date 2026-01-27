@@ -4,6 +4,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.mergeOddsWithProps = mergeOddsWithProps;
 const odds_math_1 = require("./odds_math");
 const fetch_sgo_odds_1 = require("./fetch_sgo_odds");
+// NOTE: Fantasy support modules (fantasy.ts, fantasy_analyzer.ts) are already
+// implemented and can be re‑enabled for EV/fantasy workflows once you have
+// independent projections / historical data wired in. For now, fantasy props
+// are explicitly excluded from the EV legs/cards flow.
 function normalizeName(name) {
     return name.trim().toLowerCase();
 }
@@ -17,8 +21,8 @@ function normalizeSgoPlayerId(id) {
     const nameParts = parts.slice(0, -2);
     return normalizeName(nameParts.join(" "));
 }
-// Max allowed difference between SGO line and PrizePicks line
-const MAX_LINE_DIFF = 3; // points
+// Max allowed difference between SGO line and PrizePicks/UD line
+const MAX_LINE_DIFF = 3; // points/yards/etc.
 // Max allowed absolute juice magnitude (ignore prices worse than -250)
 const MAX_JUICE = 150;
 function isJuiceTooExtreme(american) {
@@ -30,7 +34,9 @@ function findBestMatchForPick(pick, sgoMarkets) {
     const targetName = normalizeName(pick.player);
     const candidates = sgoMarkets.filter((o) => {
         const sgoName = normalizeSgoPlayerId(o.player);
-        return sgoName === targetName && o.stat === "points";
+        return (sgoName === targetName &&
+            o.stat === pick.stat &&
+            o.league.toUpperCase() === pick.league.toUpperCase());
     });
     if (!candidates.length)
         return null;
@@ -57,7 +63,7 @@ function findBestMatchForPick(pick, sgoMarkets) {
 }
 async function mergeOddsWithProps(rawPicks) {
     // Live SGO only; no stub odds
-    const sgoMarketsLive = await (0, fetch_sgo_odds_1.fetchSgoPlayerPointsOdds)();
+    const sgoMarketsLive = await (0, fetch_sgo_odds_1.fetchSgoPlayerPropOdds)();
     if (sgoMarketsLive.length === 0) {
         // eslint-disable-next-line no-console
         console.log("mergeOddsWithProps: no SGO markets available; returning 0 merged picks");
@@ -68,13 +74,15 @@ async function mergeOddsWithProps(rawPicks) {
     const sgoMarkets = sgoMarketsLive;
     const merged = [];
     for (const pick of rawPicks) {
-        // NEW: future promo guard – harmless until you add flags on RawPick
+        // Promo guard – harmless until you add more nuanced behavior
         const anyPick = pick;
         if (anyPick.isDemon || anyPick.isGoblin || anyPick.isPromo) {
             continue;
         }
-        if (pick.stat !== "points" || pick.league !== "NBA")
+        // Explicitly exclude fantasy props from EV legs/cards for now.
+        if (pick.stat === "fantasy_score") {
             continue;
+        }
         const match = findBestMatchForPick(pick, sgoMarkets);
         if (!match)
             continue;

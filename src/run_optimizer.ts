@@ -1,13 +1,16 @@
 // src/run_optimizer.ts
 
 /* eslint-disable no-console */
+
 import fs from "fs";
 import path from "path";
+
 import { fetchPrizePicksRawProps } from "./fetch_props";
 import { mergeOddsWithProps } from "./merge_odds";
 import { calculateEvForMergedPicks } from "./calculate_ev";
 import { evaluateFlexCard } from "./card_ev";
 import { CardEvResult, EvPick, FlexType } from "./types";
+import { runFantasyAnalyzer } from "./fantasy_analyzer";
 
 // --------- Tuning knobs ---------
 
@@ -15,7 +18,7 @@ import { CardEvResult, EvPick, FlexType } from "./types";
 const MIN_EDGE_PER_LEG = 0.02;
 
 // Minimum card EV as a fraction of stake (e.g. 0.04 = +4% ROE).
-// NOTE: this is now enforced below when filtering cards.
+// NOTE: this is enforced below when filtering cards.
 const MIN_CARD_EV_FRACTION = 0.04;
 
 // At most 1 leg per player overall
@@ -108,7 +111,7 @@ function buildCardsForSize(
   const cards: CardEvResult[] = [];
 
   for (const window of windows) {
-    // If you want to enforce correlation caps later, re-enable this:
+    // If you want to enforce correlation caps, uncomment:
     // if (!isCardWithinCorrelationLimits(window)) continue;
 
     const cardLegs = window.map((pick) => ({
@@ -277,11 +280,13 @@ async function run(): Promise<void> {
   console.log("Top EV legs after filtering:");
   for (const leg of topLegs) {
     console.log(
-      `  player=${leg.player}, stat=${leg.stat}, line=${leg.line}, ` +
+      ` player=${leg.player}, stat=${leg.stat}, line=${leg.line}, ` +
         `trueProb=${
           Number.isFinite(leg.trueProb) ? leg.trueProb.toFixed(3) : leg.trueProb
         }, ` +
-        `edge=${Number.isFinite(leg.edge) ? leg.edge.toFixed(3) : leg.edge}, ` +
+        `edge=${
+          Number.isFinite(leg.edge) ? leg.edge.toFixed(3) : leg.edge
+        }, ` +
         `overOdds=${leg.overOdds}, underOdds=${leg.underOdds}, book=${leg.book}, ` +
         `team=${leg.team}, opponent=${leg.opponent}`
     );
@@ -320,6 +325,20 @@ async function run(): Promise<void> {
   const cardsCsvPath = path.join(process.cwd(), "prizepicks-cards.csv");
   writeCardsCsv(allCards, cardsCsvPath, runTimestamp);
   console.log(`Wrote ${allCards.length} cards to ${cardsCsvPath}`);
+
+  // ---- Fantasy analyzer (NBA + NFL fantasy_score props) ----
+  const fantasyRows = await runFantasyAnalyzer();
+  console.log("Fantasy analyzer total rows:", fantasyRows.length);
+  console.log("Top 25 fantasy edges (implied - line):");
+  console.table(
+    fantasyRows.slice(0, 25).map((r) => ({
+      league: r.league,
+      player: r.player,
+      fantasyLine: r.fantasyLine,
+      impliedFantasy: Number(r.impliedFantasy.toFixed(2)),
+      diff: Number(r.diff.toFixed(2)), // positive = over lean
+    }))
+  );
 }
 
 run().catch((err) => {

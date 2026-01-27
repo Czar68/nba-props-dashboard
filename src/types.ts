@@ -3,6 +3,7 @@
 export type Site = "prizepicks" | "underdog" | "sleeper";
 
 export type StatCategory =
+  // NBA stats
   | "points"
   | "rebounds"
   | "assists"
@@ -33,14 +34,43 @@ export type StatCategory =
 
 // Narrow stat name alias used by normalize_stats.ts
 export type StatType =
+  // NBA core
   | "points"
   | "rebounds"
   | "assists"
   | "pra"
+  | "pr"
+  | "pa"
+  | "ra"
   | "threes"
   | "blocks"
   | "steals"
-  | "fantasy";
+  | "stocks"
+  | "turnovers"
+  | "fantasy"
+  // NFL passing
+  | "pass_yards"
+  | "pass_attempts"
+  | "pass_completions"
+  | "pass_tds"
+  | "interceptions"
+  | "longest_completion"
+  | "passer_rating"
+  // NFL rushing
+  | "rush_yards"
+  | "rush_attempts"
+  | "rush_tds"
+  | "longest_rush"
+  // NFL receiving
+  | "rec_yards"
+  | "receptions"
+  | "rec_tds"
+  | "longest_reception"
+  // NFL combos + TDs + fantasy
+  | "pass_rush_yards"
+  | "rush_rec_yards"
+  | "any_td"
+  | "nfl_fantasy";
 
 // Raw PrizePicks leg at ingest
 export interface RawPick {
@@ -62,7 +92,7 @@ export interface RawPick {
 }
 
 // Shape returned from SGO fetch_sgo_odds.ts
-export interface SgoPlayerPointsOdds {
+export interface SgoPlayerPropOdds {
   player: string;
   team: string | null;
   opponent: string | null;
