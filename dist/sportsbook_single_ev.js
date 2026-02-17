@@ -1,0 +1,166 @@
+"use strict";
+// src/sportsbook_single_ev.ts
+// Sports-agnostic single-bet EV + Kelly module for sportsbooks
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.americanToDecimal = americanToDecimal;
+exports.decimalToAmerican = decimalToAmerican;
+exports.toDecimalOdds = toDecimalOdds;
+exports.toAmericanOdds = toAmericanOdds;
+exports.calculateImpliedProbability = calculateImpliedProbability;
+exports.calculateFairOdds = calculateFairOdds;
+exports.calculateSingleBetEV = calculateSingleBetEV;
+exports.calculateKellyFraction = calculateKellyFraction;
+exports.evaluateSingleBetEV = evaluateSingleBetEV;
+exports.evaluateMultipleSingleBets = evaluateMultipleSingleBets;
+exports.filterPositiveEV = filterPositiveEV;
+exports.sortByEV = sortByEV;
+exports.sortByKelly = sortByKelly;
+/**
+ * Convert American odds to decimal odds
+ * American odds: +110 → 2.10, -110 → 1.91
+ */
+function americanToDecimal(americanOdds) {
+    if (americanOdds > 0) {
+        return (americanOdds / 100) + 1;
+    }
+    else {
+        return (100 / Math.abs(americanOdds)) + 1;
+    }
+}
+/**
+ * Convert decimal odds to American odds
+ * Decimal odds: 2.10 → +110, 1.91 → -110
+ */
+function decimalToAmerican(decimalOdds) {
+    if (decimalOdds >= 2) {
+        return Math.round((decimalOdds - 1) * 100);
+    }
+    else {
+        return Math.round(-100 / (decimalOdds - 1));
+    }
+}
+/**
+ * Convert odds to decimal format (ensures decimal for calculations)
+ */
+function toDecimalOdds(odds, format) {
+    return format === 'decimal' ? odds : americanToDecimal(odds);
+}
+/**
+ * Convert odds to American format (ensures American for display)
+ */
+function toAmericanOdds(odds, format) {
+    return format === 'american' ? odds : decimalToAmerican(odds);
+}
+/**
+ * Calculate implied win probability from odds (ignoring vig)
+ * Formula: impliedProb = 1 / decimalOdds
+ */
+function calculateImpliedProbability(decimalOdds) {
+    return 1 / decimalOdds;
+}
+/**
+ * Calculate fair decimal odds from true win probability
+ * Formula: fairOdds = 1 / trueProb
+ */
+function calculateFairOdds(trueWinProb) {
+    return 1 / trueWinProb;
+}
+/**
+ * Calculate single-bet EV for a unit stake
+ * EV = p * (payout) - (1 - p) * 1
+ * where payout = decimalOdds - 1 (net profit per unit stake)
+ */
+function calculateSingleBetEV(trueWinProb, decimalOdds) {
+    const netProfit = decimalOdds - 1; // profit per unit stake if win
+    const ev = (trueWinProb * netProfit) - ((1 - trueWinProb) * 1);
+    return ev;
+}
+/**
+ * Calculate Kelly fraction for a single bet
+ * Kelly formula: f* = (bp - q) / b
+ * where b = decimal net odds, p = trueWinProb, q = 1 - p
+ */
+function calculateKellyFraction(trueWinProb, decimalOdds) {
+    const b = decimalOdds - 1; // net odds (decimal profit per unit)
+    const p = trueWinProb;
+    const q = 1 - p;
+    const kelly = (b * p - q) / b;
+    // Clamp to [0, 1] and set to 0 if EV ≤ 0
+    const ev = calculateSingleBetEV(p, decimalOdds);
+    if (ev <= 0) {
+        return 0;
+    }
+    return Math.max(0, Math.min(1, kelly));
+}
+/**
+ * Main evaluation function for single-bet EV and Kelly
+ */
+function evaluateSingleBetEV(input) {
+    // Convert odds to decimal for calculations
+    const decimalOdds = toDecimalOdds(input.odds, input.oddsFormat);
+    const americanOdds = toAmericanOdds(input.odds, input.oddsFormat);
+    // Calculate probabilities and fair odds
+    const impliedWinProb = calculateImpliedProbability(decimalOdds);
+    const fairOddsDecimal = calculateFairOdds(input.trueWinProb);
+    const fairOddsAmerican = decimalToAmerican(fairOddsDecimal);
+    // Calculate EV and edge
+    const evPerUnit = calculateSingleBetEV(input.trueWinProb, decimalOdds);
+    const edgePct = evPerUnit * 100; // Convert to percentage
+    // Calculate Kelly fraction
+    const kellyFraction = calculateKellyFraction(input.trueWinProb, decimalOdds);
+    return {
+        sport: input.sport,
+        marketId: input.marketId,
+        book: input.book,
+        side: input.side,
+        odds: input.odds,
+        oddsFormat: input.oddsFormat,
+        impliedWinProb,
+        trueWinProb: input.trueWinProb,
+        fairOddsDecimal,
+        fairOddsAmerican,
+        edgePct,
+        evPerUnit,
+        kellyFraction,
+    };
+}
+/**
+ * Batch evaluate multiple single bets
+ */
+function evaluateMultipleSingleBets(inputs) {
+    return inputs.map(evaluateSingleBetEV);
+}
+/**
+ * Filter positive EV bets from results
+ */
+function filterPositiveEV(results) {
+    return results.filter(result => result.evPerUnit > 0);
+}
+/**
+ * Sort bets by EV (descending)
+ */
+function sortByEV(results) {
+    return [...results].sort((a, b) => b.evPerUnit - a.evPerUnit);
+}
+/**
+ * Sort bets by Kelly fraction (descending)
+ */
+function sortByKelly(results) {
+    return [...results].sort((a, b) => b.kellyFraction - a.kellyFraction);
+}
+// TODO: Map existing odds feeds to SingleBetInput[]
+// This function will connect your existing SGO / sportsbook odds model to SingleBetInput
+/*
+export function buildSingleBetInputsFromOddsFeed(/* odds feed types * /): SingleBetInput[] {
+  // Map each market where we have a true probability and a book price
+  // Example structure:
+  // - Extract sport from league/market data
+  // - Use marketId from your odds feed
+  // - Map book names (DK, FD, etc.)
+  // - Normalize sides (over/under, team names)
+  // - Convert odds to appropriate format
+  // - Use your model's trueWinProb from existing calculations
+  
+  return [];
+}
+*/

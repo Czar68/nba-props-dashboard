@@ -1,0 +1,7 @@
+Sport,site,flexType,cardEv,kellyStake,kellyFrac,leg1Id,leg2Id,leg3Id,leg4Id,leg5Id,leg6Id,avgEdgePct,runTimestamp
+NBA,PP,PP,0.025,25.00,2.5%,test-123,test-456,test-789,,,0.025,2026-02-16T15:00:00 ET
+NCAAB,PP,PP,0.030,30.00,3.0%,test-456,test-789,test-123,,,0.030,2026-02-16T15:00:00 ET
+NHL,PP,PP,0.020,20.00,2.0%,test-789,test-123,test-456,,,0.020,2026-02-16T15:00:00 ET
+NFL,PP,PP,0.035,35.00,3.5%,test-123,test-456,test-789,,,0.035,2026-02-16T15:00:00 ET
+MLB,PP,PP,0.040,40.00,4.0%,test-456,test-789,test-123,,,0.040,2026-02-16T15:00:00 ET
+NCAAF,PP,PP,0.045,45.00,4.5%,test-789,test-123,test-456,,,0.045,2026-02-16T15:00:00 ET

@@ -1,1 +1,1 @@
-site,league,player,team,opponent,stat,line,projectionId,gameId,startTime,outcome,trueProb,fairOdds,edge,book,overOdds,underOdds,legEv,runTimestamp
+Sport,id,player,team,stat,line,league,book,overOdds,underOdds,trueProb,edge,legEv,runTimestamp,gameTime,IsWithin24h,IsNonStandardOdds

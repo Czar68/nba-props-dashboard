@@ -1,23 +1,17 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "module": "commonjs",
+    "module": "CommonJS",
+    "moduleResolution": "node",
     "rootDir": "src",
     "outDir": "dist",
-    "moduleResolution": "node",
+    "strict": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
-    "strict": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "noImplicitAny": true,
-    "strictNullChecks": true
+    "jsx": "react-jsx"
   },
-  "include": [
-    "src/**/*"
-  ],
-  "exclude": [
-    "node_modules",
-    "scripts"
-  ]
+  "include": ["src/**/*", "web-dashboard/src/**/*"],
+  "exclude": ["node_modules", "dist", "web-dashboard/dist"]
 }

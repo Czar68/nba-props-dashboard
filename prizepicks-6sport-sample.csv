@@ -1,0 +1,7 @@
+Sport,id,player,team,stat,line,league,book,overOdds,underOdds,trueProb,edge,legEv,runTimestamp,gameTime,IsWithin24h,IsNonStandardOdds
+NBA,test-123,LeBron James,Lakers,points,23.5,NBA,consensus,-108,108,0.520,0.020,0.020,2026-02-16T15:00:00 ET,2026-02-16T19:00:00.000-05:00,TRUE,FALSE
+NCAAB,test-456,Cooper Flagg,Duke,points,18.5,NCAAB,consensus,-110,110,0.524,0.024,0.024,2026-02-16T15:00:00 ET,2026-02-16T19:00:00.000-05:00,TRUE,FALSE
+NHL,test-789,Connor McDavid,Oilers,points,1.5,NHL,consensus,-105,105,0.512,0.012,0.012,2026-02-16T15:00:00 ET,2026-02-16T19:00:00.000-05:00,TRUE,FALSE
+NFL,test-101,Patrick Mahomes,Chiefs,passing yards,254.5,NFL,consensus,-115,115,0.534,0.034,0.034,2026-02-16T15:00:00 ET,2026-02-16T19:00:00.000-05:00,TRUE,FALSE
+MLB,test-112,Aaron Judge,Yankees,home runs,0.5,MLB,consensus,-120,120,0.545,0.045,0.045,2026-02-16T15:00:00 ET,2026-02-16T19:00:00.000-05:00,TRUE,FALSE
+NCAAF,test-123,Caleb Williams,USC,passing yards,280.5,NCAAF,consensus,-125,125,0.556,0.056,0.056,2026-02-16T15:00:00 ET,2026-02-16T19:00:00.000-05:00,TRUE,FALSE

@@ -7,6 +7,7 @@ const merge_odds_1 = require("./merge_odds");
 // For now, hard‑code a couple of example picks just to validate wiring.
 const dummyPicks = [
     {
+        sport: "NBA",
         site: "prizepicks",
         league: "NBA",
         player: "LeBron James",
@@ -20,8 +21,10 @@ const dummyPicks = [
         isDemon: false,
         isGoblin: false,
         isPromo: false,
+        isNonStandardOdds: false,
     },
     {
+        sport: "NFL",
         site: "prizepicks",
         league: "NFL",
         player: "Patrick Mahomes",
@@ -35,6 +38,7 @@ const dummyPicks = [
         isDemon: false,
         isGoblin: false,
         isPromo: false,
+        isNonStandardOdds: false,
     },
 ];
 async function main() {

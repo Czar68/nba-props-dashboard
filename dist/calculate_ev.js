@@ -13,6 +13,7 @@ function calculateEvForMergedPick(pick) {
     const id = `${pick.site}-${pick.projectionId}-${pick.stat}-${pick.line}`;
     return {
         id,
+        sport: pick.sport,
         site: pick.site,
         league: pick.league,
         player: pick.player,
@@ -31,6 +32,7 @@ function calculateEvForMergedPick(pick) {
         overOdds: pick.overOdds,
         underOdds: pick.underOdds,
         legEv,
+        isNonStandardOdds: pick.isNonStandardOdds ?? false,
     };
 }
 function calculateEvForMergedPicks(merged) {

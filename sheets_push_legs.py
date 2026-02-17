@@ -62,9 +62,10 @@ def main():
 
     # Clear the whole Legs area before pushing new rows.
     # Adjust the end column if you change the legs CSV schema width.
+    # Legs CSV now has 16 columns: Sport + A–O = A–P.
     service.spreadsheets().values().clear(
         spreadsheetId=SPREADSHEET_ID,
-        range="Legs!A2:N",
+        range="Legs!A2:P",
     ).execute()
 
     if values:
@@ -75,7 +76,15 @@ def main():
             body=body,
         ).execute()
 
-    print(f"Pushed {len(values)} data rows from {CSV_PATH} to {TARGET_RANGE}")
+    print(f"Pushed {len(values)} rows to {TARGET_RANGE}")
+    
+    # Debug: show first row with Sport
+    if values:
+        first_row = values[0]
+        sport = first_row[0] if len(first_row) > 0 else "unknown"
+        leg_id = first_row[1] if len(first_row) > 1 else "unknown"
+        player = first_row[2] if len(first_row) > 2 else "unknown"
+        print(f"First row preview: Sport={sport}, id={leg_id}, player={player}")
 
 
 if __name__ == "__main__":

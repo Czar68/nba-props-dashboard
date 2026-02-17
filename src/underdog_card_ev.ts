@@ -1,5 +1,21 @@
 // src/underdog_card_ev.ts
+//
+// Underdog card EV evaluation.  Two modes only — Standard and Flex — matching
+// the two modes exposed in the Underdog Pick'em UI.
+//
+// Standard: all-or-nothing (single payout tier).
+// Flex:     tiered payout ladder (1-loss for 3–5 picks, 2-loss for 6–8 picks).
+//
+// Both functions use the exact non-identical hit distribution (DP), not the
+// i.i.d. binomial approximation used by the PrizePicks engine.
+
 import { CardLegInput } from "./types";
+import { 
+  getUnderdogStructureById, 
+  getUnderdogStructureId, 
+  calculateBreakEvenLegWinRate 
+} from "./config/underdog_structures";
+import { computeKellyForCard, DEFAULT_KELLY_CONFIG } from "./kelly_mean_variance";
 
 // Simple helper to compute card EV from hit distribution and payout structure
 function computeCardEvFromPayouts(
@@ -23,7 +39,7 @@ function computeCardEvFromPayouts(
   return { expectedReturn, expectedValue, winProbability };
 }
 
-// Compute distribution of hits from independent leg probabilities
+// Compute distribution of hits from independent leg probabilities (DP)
 function computeHitDistribution(legs: CardLegInput[]): number[] {
   const n = legs.length;
   const dist = new Array(n + 1).fill(0);
@@ -40,32 +56,41 @@ function computeHitDistribution(legs: CardLegInput[]): number[] {
   return dist;
 }
 
-// Underdog "power" (standard) payouts (current typical structure, adjust if needed)
-// 3-pick: 5x
-// 4-pick: 9x
-// 5-pick: 19x
-// 6-pick: 30x
-export function evaluateUdStandardCard(legs: CardLegInput[]) {
+// Underdog Standard (all-or-nothing) evaluation
+export function evaluateUdStandardCard(legs: CardLegInput[], overrideStructureId?: string) {
   const size = legs.length;
   const stake = 1;
 
-  const hitProbs = computeHitDistribution(legs);
-  const payouts: { [hits: number]: number } = {};
-
-  if (size === 3) {
-    payouts[3] = 5;
-  } else if (size === 4) {
-    payouts[4] = 9;
-  } else if (size === 5) {
-    payouts[5] = 19;
-  } else if (size === 6) {
-    payouts[6] = 30;
-  } else {
+  const structureId = overrideStructureId ?? getUnderdogStructureId(size, 'standard');
+  if (!structureId) {
     throw new Error(`Unsupported UD standard card size: ${size}`);
   }
+  
+  const structure = getUnderdogStructureById(structureId);
+  if (!structure) {
+    throw new Error(`Structure not found: ${structureId}`);
+  }
+
+  const hitProbs = computeHitDistribution(legs);
+  const payouts = structure.payouts;
 
   const { expectedReturn, expectedValue, winProbability } =
     computeCardEvFromPayouts(hitProbs, payouts, stake);
+
+  // Convert hit distribution array to record format for Kelly calculation
+  const hitDistributionRecord: Record<number, number> = {};
+  hitProbs.forEach((prob, hits) => {
+    if (prob > 0) hitDistributionRecord[hits] = prob;
+  });
+
+  // Compute Kelly sizing using mean-variance approximation
+  const kellyResult = computeKellyForCard(
+    expectedValue,
+    hitDistributionRecord,
+    structure.id.replace('UD_', '') as any, // Remove 'UD_' prefix for consistency
+    'underdog',
+    DEFAULT_KELLY_CONFIG
+  );
 
   return {
     stake,
@@ -73,35 +98,55 @@ export function evaluateUdStandardCard(legs: CardLegInput[]) {
     expectedValue,
     winProbability,
     hitDistribution: hitProbs,
+    structureId: structure.id,
+    structureType: structure.type,
+    breakEvenLegWinRate: calculateBreakEvenLegWinRate(structure),
+    kellyResult,
   };
 }
 
-// Underdog flex payouts (current typical structure, adjust if needed)
-// 3-flex: 3x on 3/3, 1x on 2/3
-// 4-flex: 6x on 4/4, 1.5x on 3/4
-// 5-flex: 10x on 5/5, 2.5x on 4/5
-export function evaluateUdFlexCard(legs: CardLegInput[]) {
+// Underdog Flex evaluation (tiered payout ladder — 1-loss or 2-loss)
+export function evaluateUdFlexCard(legs: CardLegInput[], overrideStructureId?: string) {
   const size = legs.length;
   const stake = 1;
 
-  const hitProbs = computeHitDistribution(legs);
-  const payouts: { [hits: number]: number } = {};
-
-  if (size === 3) {
-    payouts[3] = 3;
-    payouts[2] = 1;
-  } else if (size === 4) {
-    payouts[4] = 6;
-    payouts[3] = 1.5;
-  } else if (size === 5) {
-    payouts[5] = 10;
-    payouts[4] = 2.5;
-  } else {
+  // Default to 'flex' type lookup when no override provided
+  const structureId = overrideStructureId ?? getUnderdogStructureId(size, 'flex');
+  if (!structureId) {
     throw new Error(`Unsupported UD flex card size: ${size}`);
   }
+  
+  const structure = getUnderdogStructureById(structureId);
+  if (!structure) {
+    throw new Error(`Structure not found: ${structureId}`);
+  }
+
+  // Verify this structure has flex-style payouts (multiple hit levels)
+  const hitCount = Object.keys(structure.payouts).length;
+  if (hitCount <= 1) {
+    throw new Error(`Structure ${structureId} does not have flex-style payouts`);
+  }
+
+  const hitProbs = computeHitDistribution(legs);
+  const payouts = structure.payouts;
 
   const { expectedReturn, expectedValue, winProbability } =
     computeCardEvFromPayouts(hitProbs, payouts, stake);
+
+  // Convert hit distribution array to record format for Kelly calculation
+  const hitDistributionRecord: Record<number, number> = {};
+  hitProbs.forEach((prob, hits) => {
+    if (prob > 0) hitDistributionRecord[hits] = prob;
+  });
+
+  // Compute Kelly sizing using mean-variance approximation
+  const kellyResult = computeKellyForCard(
+    expectedValue,
+    hitDistributionRecord,
+    structure.id.replace('UD_', '') as any, // Remove 'UD_' prefix for consistency
+    'underdog',
+    DEFAULT_KELLY_CONFIG
+  );
 
   return {
     stake,
@@ -109,5 +154,13 @@ export function evaluateUdFlexCard(legs: CardLegInput[]) {
     expectedValue,
     winProbability,
     hitDistribution: hitProbs,
+    structureId: structure.id,
+    structureType: structure.type,
+    breakEvenLegWinRate: calculateBreakEvenLegWinRate(structure),
+    kellyResult,
   };
 }
+
+// Backward-compat alias — old code may still reference evaluateUdInsuredCard.
+// Flex ladders ARE the insurance-like product; there is no separate Insured mode.
+export const evaluateUdInsuredCard = evaluateUdFlexCard;

@@ -15,6 +15,35 @@ const PREFERRED_BOOKS = [
     "espn_bet",
     "pointsbet",
 ];
+// Map league IDs to Sport types
+function mapLeagueToSport(leagueID) {
+    const leagueUpper = leagueID.toUpperCase();
+    // NBA leagues
+    if (leagueUpper === 'NBA' || leagueUpper.includes('BASKETBALL')) {
+        return 'NBA';
+    }
+    // NFL leagues
+    if (leagueUpper === 'NFL' || leagueUpper.includes('FOOTBALL')) {
+        return 'NFL';
+    }
+    // MLB leagues
+    if (leagueUpper === 'MLB' || leagueUpper.includes('BASEBALL')) {
+        return 'MLB';
+    }
+    // NHL leagues
+    if (leagueUpper === 'NHL' || leagueUpper.includes('HOCKEY')) {
+        return 'NHL';
+    }
+    // College leagues
+    if (leagueUpper === 'NCAAB' || leagueUpper.includes('COLLEGE BASKETBALL')) {
+        return 'NCAAB';
+    }
+    if (leagueUpper === 'NCAAF' || leagueUpper.includes('COLLEGE FOOTBALL')) {
+        return 'NCAAF';
+    }
+    // Default to NBA for unknown leagues
+    return 'NBA';
+}
 function pickBestBookmaker(byBookmaker) {
     if (!byBookmaker)
         return null;
@@ -109,6 +138,32 @@ function mapSgoStatIdToCategory(statID, leagueID) {
         if (key === "receiving_receptions")
             return "receptions";
     }
+    // NHL stats
+    if (league === "NHL") {
+        if (key === "points")
+            return "points";
+        if (key === "goals")
+            return "goals";
+        if (key === "assists")
+            return "assists";
+        if (key === "shots_on_goal" || key === "shots" || key === "sog")
+            return "shots_on_goal";
+        if (key === "saves")
+            return "saves";
+        if (key === "goals_against" || key === "goalsagainst")
+            return "goals_against";
+        if (key === "blocked_shots" || key === "blocks")
+            return "blocks";
+    }
+    // MLB stats
+    if (league === "MLB") {
+        if (key === "hits")
+            return "points";
+        if (key === "strikeouts" || key === "pitcher_strikeouts")
+            return "blocks";
+        if (key === "total_bases")
+            return "rebounds";
+    }
     return null;
 }
 async function fetchLeaguePlayerProps(client, leagueID) {
@@ -173,6 +228,7 @@ async function fetchLeaguePlayerProps(client, leagueID) {
             let existing = byPlayerAndStat.get(key);
             if (!existing) {
                 existing = {
+                    sport: mapLeagueToSport(league),
                     player: statEntityID, // raw ID; mapped later in merge step
                     team: null,
                     opponent: null,
@@ -212,7 +268,7 @@ async function fetchLeaguePlayerProps(client, leagueID) {
     console.log(`fetchSgoPlayerPropOdds: returning ${filtered.length} ${leagueID} player prop markets from SGO`);
     return results;
 }
-async function fetchSgoPlayerPropOdds() {
+async function fetchSgoPlayerPropOdds(sports = ['NBA']) {
     const apiKey = process.env.SGO_API_KEY ?? process.env.SGOAPIKEY;
     if (!apiKey) {
         // eslint-disable-next-line no-console
@@ -221,23 +277,29 @@ async function fetchSgoPlayerPropOdds() {
     }
     const client = new sports_odds_api_1.default({ apiKeyParam: apiKey });
     const results = [];
-    // NBA props
-    try {
-        const nbaResults = await fetchLeaguePlayerProps(client, "NBA");
-        results.push(...nbaResults);
-    }
-    catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn("fetchSgoPlayerPropOdds: error calling SGO SDK for NBA", err);
-    }
-    // NFL props
-    try {
-        const nflResults = await fetchLeaguePlayerProps(client, "NFL");
-        results.push(...nflResults);
-    }
-    catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn("fetchSgoPlayerPropOdds: error calling SGO SDK for NFL", err);
+    // Map sports to SGO league IDs
+    const sportToLeagueMap = {
+        'NBA': 'NBA',
+        'NFL': 'NFL',
+        'NHL': 'NHL',
+        'MLB': 'MLB',
+        'NCAAB': 'NCAAB',
+        'NCAAF': 'NCAAF'
+    };
+    // Filter to supported leagues for the requested sports
+    const leagues = sports
+        .map(sport => sportToLeagueMap[sport])
+        .filter((league) => ["NBA", "NFL", "NHL", "MLB"].includes(league));
+    console.log(`fetchSgoPlayerPropOdds: fetching leagues [${leagues.join(', ')}] for sports [${sports.join(', ')}]`);
+    for (const league of leagues) {
+        try {
+            const leagueResults = await fetchLeaguePlayerProps(client, league);
+            results.push(...leagueResults);
+        }
+        catch (err) {
+            // eslint-disable-next-line no-console
+            console.warn(`fetchSgoPlayerPropOdds: error calling SGO SDK for ${league}`, err);
+        }
     }
     return results;
 }

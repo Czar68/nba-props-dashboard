@@ -3,7 +3,8 @@
 import fetch from "node-fetch";
 import fs from "fs";
 import path from "path";
-import { RawPick, StatCategory } from "./types";
+import { RawPick, StatCategory, Sport } from "./types";
+import { getAllowedPPLeagues, PP_LEAGUE_IDS } from "./config/leagues";
 
 const PRIZEPICKS_PROJECTIONS_BASE_URL = "https://api.prizepicks.com/projections";
 
@@ -74,6 +75,43 @@ interface PrizePicksProjectionsResponse {
   included: PrizePicksIncludedItem[];
 }
 
+// Map league names to Sport types
+function mapLeagueToSport(league: string): Sport {
+  const leagueUpper = league.toUpperCase();
+  
+  // NBA leagues
+  if (leagueUpper === 'NBA' || leagueUpper.includes('BASKETBALL')) {
+    return 'NBA';
+  }
+  
+  // NFL leagues
+  if (leagueUpper === 'NFL' || leagueUpper.includes('FOOTBALL')) {
+    return 'NFL';
+  }
+  
+  // MLB leagues
+  if (leagueUpper === 'MLB' || leagueUpper.includes('BASEBALL')) {
+    return 'MLB';
+  }
+  
+  // NHL leagues
+  if (leagueUpper === 'NHL' || leagueUpper.includes('HOCKEY')) {
+    return 'NHL';
+  }
+  
+  // College leagues
+  if (leagueUpper === 'NCAAB' || leagueUpper.includes('COLLEGE BASKETBALL')) {
+    return 'NCAAB';
+  }
+  
+  if (leagueUpper === 'NCAAF' || leagueUpper.includes('COLLEGE FOOTBALL')) {
+    return 'NCAAF';
+  }
+  
+  // Default to NBA for unknown leagues
+  return 'NBA';
+}
+
 // Map PrizePicks attr.stat_type into our StatCategory
 function mapStatType(statTypeRaw: string): StatCategory | null {
   const s = statTypeRaw.toLowerCase();
@@ -139,6 +177,19 @@ function mapStatType(statTypeRaw: string): StatCategory | null {
   if (s === "receptions" || s === "catches") return "receptions";
 
   if (s === "fantasy score") return "fantasy_score";
+
+  // NHL stats
+  if (s === "goals" || s === "goal") return "goals";
+  if (s === "assists" || s === "ast") return "assists";
+  if (s === "points" || s === "pts") return "points";
+  if (s === "shots_on_goal" || s === "shots" || s === "sog") return "shots_on_goal";
+  if (s === "saves" || s === "save") return "saves";
+  if (s === "goals_against" || s === "ga") return "goals_against";
+  if (s === "plus_minus" || s === "plusminus" || s === "+/-") return "plus_minus";
+  if (s === "penalty_minutes" || s === "pim") return "penalty_minutes";
+  if (s === "power_play_goals" || s === "ppg") return "power_play_goals";
+  if (s === "short_handed_goals" || s === "shg") return "short_handed_goals";
+  if (s === "time_on_ice" || s === "toi") return "time_on_ice";
 
   return null;
 }
@@ -246,6 +297,7 @@ function mapJsonToRawPicks(json: PrizePicksProjectionsResponse): RawPick[] {
     const isPromo = hasExplicitPromoFlag || isGoblin || isDemon;
 
     const pick: RawPick = {
+      sport: mapLeagueToSport(league),
       site: "prizepicks",
       league,
       player,
@@ -259,6 +311,7 @@ function mapJsonToRawPicks(json: PrizePicksProjectionsResponse): RawPick[] {
       isDemon,
       isGoblin,
       isPromo,
+      isNonStandardOdds: false,
     };
 
     picks.push(pick);
@@ -332,31 +385,55 @@ async function fetchLeagueProjections(
   }
 }
 
-export async function fetchPrizePicksRawProps(): Promise<RawPick[]> {
-  // Fetch NBA (7) and NFL (9) separately, then combine.
-  const [nbaJson, nflJson] = await Promise.all([
-    fetchLeagueProjections(7),
-    fetchLeagueProjections(9),
-  ]);
+export async function fetchPrizePicksRawProps(sports: Sport[] = ['NBA']): Promise<RawPick[]> {
+  // Convert sports to league keys
+  const sportToLeagueMap: Record<Sport, string> = {
+    'NBA': 'NBA',
+    'NFL': 'NFL', 
+    'NHL': 'NHL',
+    'MLB': 'MLB',
+    'NCAAB': 'NCAAB', // PrizePicks may not support this
+    'NCAAF': 'NCAAF', // PrizePicks may not support this
+  };
+  
+  const allowedLeagues = new Set(sports.map(sport => sportToLeagueMap[sport]).filter(Boolean));
+  console.log(`fetchPrizePicksRawProps: allowed leagues = [${[...allowedLeagues].join(', ')}]`);
 
-  if (!nbaJson && !nflJson) {
+  // Build fetch promises only for allowed leagues
+  const ALL_LEAGUES: { key: string; id: number }[] = [
+    { key: "NBA", id: PP_LEAGUE_IDS.NBA },
+    { key: "NFL", id: PP_LEAGUE_IDS.NFL },
+    { key: "NHL", id: PP_LEAGUE_IDS.NHL },
+    { key: "MLB", id: PP_LEAGUE_IDS.MLB },
+  ];
+
+  const leaguesToFetch = ALL_LEAGUES.filter((l) => allowedLeagues.has(l.key));
+  const results = await Promise.all(
+    leaguesToFetch.map((l) => fetchLeagueProjections(l.id).then((json) => ({ key: l.key, json })))
+  );
+
+  const anySuccess = results.some((r) => r.json !== null);
+  if (!anySuccess) {
     console.error(
-      "fetchPrizePicksRawProps: no data for NBA or NFL; using fallback if available"
+      "fetchPrizePicksRawProps: no data for any allowed league; using fallback if available"
     );
     return loadFromDiskFallback();
   }
 
-  const nbaPicks = nbaJson ? mapJsonToRawPicks(nbaJson) : [];
-  const nflPicks = nflJson ? mapJsonToRawPicks(nflJson) : [];
+  const picksByLeague: Record<string, RawPick[]> = {};
+  for (const { key, json } of results) {
+    picksByLeague[key] = json ? mapJsonToRawPicks(json) : [];
+  }
 
-  console.log(
-    `fetchPrizePicksRawProps: nbaPicks=${nbaPicks.length}, nflPicks=${nflPicks.length}`
-  );
+  const summary = Object.entries(picksByLeague)
+    .map(([k, v]) => `${k}=${v.length}`)
+    .join(", ");
+  console.log(`fetchPrizePicksRawProps: ${summary}`);
 
-  const picks = [...nbaPicks, ...nflPicks];
+  const picks = Object.values(picksByLeague).flat();
 
   try {
-    const samplePayload = nbaJson ?? nflJson;
+    const samplePayload = results.find((r) => r.json !== null)?.json;
     if (samplePayload) {
       fs.writeFileSync(
         "pp_projections_sample.json",
@@ -375,7 +452,7 @@ export async function fetchPrizePicksRawProps(): Promise<RawPick[]> {
   }
 
   console.log(
-    `fetchPrizePicksRawProps: built ${picks.length} RawPick rows from live PrizePicks (NBA+NFL)`
+    `fetchPrizePicksRawProps: built ${picks.length} RawPick rows from live PrizePicks (${[...allowedLeagues].join('+')})`
   );
   return picks;
 }

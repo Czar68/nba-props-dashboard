@@ -2,6 +2,8 @@
 
 export type Site = "prizepicks" | "underdog" | "sleeper";
 
+export type Sport = 'NBA' | 'NFL' | 'MLB' | 'NHL' | 'NCAAB' | 'NCAAF'; // extensible
+
 export type StatCategory =
   // NBA stats
   | "points"
@@ -30,7 +32,19 @@ export type StatCategory =
   | "rush_attempts"
   | "rush_rec_yards"
   | "rec_yards"
-  | "receptions";
+  | "receptions"
+  // NHL stats
+  | "goals"
+  | "assists"
+  | "points"
+  | "shots_on_goal"
+  | "saves"
+  | "goals_against"
+  | "plus_minus"
+  | "penalty_minutes"
+  | "power_play_goals"
+  | "short_handed_goals"
+  | "time_on_ice";
 
 // Narrow stat name alias used by normalize_stats.ts
 export type StatType =
@@ -70,10 +84,23 @@ export type StatType =
   | "pass_rush_yards"
   | "rush_rec_yards"
   | "any_td"
-  | "nfl_fantasy";
+  | "nfl_fantasy"
+  // NHL stats
+  | "goals"
+  | "assists"
+  | "points"
+  | "shots_on_goal"
+  | "saves"
+  | "goals_against"
+  | "plus_minus"
+  | "penalty_minutes"
+  | "power_play_goals"
+  | "short_handed_goals"
+  | "time_on_ice";
 
 // Raw PrizePicks leg at ingest
 export interface RawPick {
+  sport: Sport;
   site: Site;
   league: string;
   player: string;
@@ -89,10 +116,16 @@ export interface RawPick {
   isDemon: boolean;
   isGoblin: boolean;
   isPromo: boolean;
+
+  // Underdog: true if the leg has explicit per-leg multipliers (e.g. 1.03x/0.88x)
+  // rather than standard fixed-ladder pricing. These legs don't fit the
+  // standard EV model and should be excluded from card building by default.
+  isNonStandardOdds: boolean;
 }
 
 // Shape returned from SGO fetch_sgo_odds.ts
 export interface SgoPlayerPropOdds {
+  sport: Sport;
   player: string;
   team: string | null;
   opponent: string | null;
@@ -110,6 +143,7 @@ export interface SgoPlayerPropOdds {
 
 // Merge stage: picks + odds before EV
 export interface MergedPick {
+  sport: Sport;
   site: Site;
   league: string;
   player: string;
@@ -133,12 +167,29 @@ export interface MergedPick {
   isDemon: boolean;
   isGoblin: boolean;
   isPromo: boolean;
+
+  // Underdog varied-multiplier flag (carried from RawPick)
+  isNonStandardOdds: boolean;
 }
 
 // EV / cards inputs and outputs
-export type FlexType = "flex5" | "flex6" | "power2" | "power3" | "power4";
+export type FlexType =
+  | "2P"
+  | "3P"
+  | "4P"
+  | "5P"
+  | "6P"
+  | "7P"
+  | "8P"
+  | "3F"
+  | "4F"
+  | "5F"
+  | "6F"
+  | "7F"
+  | "8F";
 
 export interface CardLegInput {
+  sport: Sport;
   player: string;
   team: string | null;
   opponent: string | null;
@@ -155,6 +206,7 @@ export interface CardLegInput {
 // Per‑leg EV object after merge_odds + calculate_ev
 export interface EvPick {
   id: string;
+  sport: Sport;
   site: Site;
   league: string;
   player: string;
@@ -175,6 +227,9 @@ export interface EvPick {
 
   // Per‑leg EV
   legEv: number;
+
+  // Underdog varied-multiplier flag (carried from RawPick → MergedPick)
+  isNonStandardOdds: boolean;
 }
 
 // Distribution of hits → probability for a card
@@ -204,8 +259,33 @@ export interface CardEvResult {
   winProbCash: number;
   winProbAny: number;
 
+  // Card-level diagnostic metrics
+  avgProb: number;    // Average of leg true probabilities
+  avgEdgePct: number; // Average leg edge in percent (edge * 100)
+
   // Full hit distribution (k hits → probability)
   hitDistribution: CardHitDistribution;
+
+  // Kelly sizing results (computed after EV)
+  kellyResult?: {
+    meanReturn: number;
+    variance: number;
+    rawKellyFraction: number;
+    cappedKellyFraction: number;    // After maxRawKellyFraction cap
+    safeKellyFraction: number;      // After globalKellyMultiplier  
+    finalKellyFraction: number;     // After all caps (what we actually use)
+    recommendedStake: number;
+    expectedProfit: number;
+    maxPotentialWin: number;
+    riskAdjustment: string;
+    isCapped: boolean;
+    capReasons: string[];
+  };
+
+  // Portfolio selection results (computed after Kelly)
+  selected?: boolean;              // True if card is in optimal portfolio
+  portfolioRank?: number;          // 1-based rank in selected cards (undefined if not selected)
+  efficiencyScore?: number;        // Efficiency = EV / (cappedKelly + epsilon)
 }
 
 // Card types used by Sheets export

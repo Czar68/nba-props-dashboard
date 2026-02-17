@@ -1,0 +1,4 @@
+Sport,id,player,team,stat,line,league,book,overOdds,underOdds,trueProb,edge,legEv,runTimestamp,gameTime,IsWithin24h,IsNonStandardOdds
+NCAAB,test-123,Cooper Flagg,Duke,points,18.5,NCAAB,consensus,-108,108,0.520,0.020,0.020,2026-02-16T15:00:00 ET,2026-02-16T19:00:00.000-05:00,TRUE,FALSE
+NCAAB,test-456,Kyle Filipowski,Duke,rebounds,8.5,NCAAB,consensus,-106,106,0.514,0.014,0.014,2026-02-16T15:00:00 ET,2026-02-16T19:00:00.000-05:00,TRUE,FALSE
+NCAAB,test-789,Jared McCain,Duke,assists,4.5,NCAAB,consensus,-112,112,0.528,0.028,0.028,2026-02-16T15:00:00 ET,2026-02-16T19:00:00.000-05:00,TRUE,FALSE

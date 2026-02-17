@@ -2,7 +2,7 @@
 import { fetchUnderdogRawProps } from "./fetch_underdog_props";
 
 async function main() {
-  const picks = await fetchUnderdogRawProps();
+  const picks = await fetchUnderdogRawProps(['NBA']); // Default to NBA for debug
   console.log("Underdog picks count:", picks.length);
   console.log(JSON.stringify(picks.slice(0, 5), null, 2));
 }

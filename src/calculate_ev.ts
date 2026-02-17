@@ -16,6 +16,7 @@ export function calculateEvForMergedPick(pick: MergedPick): EvPick {
 
   return {
     id,
+    sport: pick.sport,
     site: pick.site,
     league: pick.league,
     player: pick.player,
@@ -34,6 +35,7 @@ export function calculateEvForMergedPick(pick: MergedPick): EvPick {
     overOdds: pick.overOdds,
     underOdds: pick.underOdds,
     legEv,
+    isNonStandardOdds: pick.isNonStandardOdds ?? false,
   };
 }
 

@@ -8,6 +8,7 @@ import { RawPick } from "./types";
 // For now, hard‑code a couple of example picks just to validate wiring.
 const dummyPicks: RawPick[] = [
   {
+    sport: "NBA",
     site: "prizepicks",
     league: "NBA",
     player: "LeBron James",
@@ -21,8 +22,10 @@ const dummyPicks: RawPick[] = [
     isDemon: false,
     isGoblin: false,
     isPromo: false,
+    isNonStandardOdds: false,
   },
   {
+    sport: "NFL",
     site: "prizepicks",
     league: "NFL",
     player: "Patrick Mahomes",
@@ -36,6 +39,7 @@ const dummyPicks: RawPick[] = [
     isDemon: false,
     isGoblin: false,
     isPromo: false,
+    isNonStandardOdds: false,
   },
 ];
 
