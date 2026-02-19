@@ -1,10 +1,20 @@
 # Netlify build config – Git push → auto-deploy (no password/drag-drop)
 # Site: dynamic-gingersnap-3ee837
+# Repo: Czar68/nba-props-dashboard → main
 
 [build]
-  base    = "web-dashboard"
-  command = "npm run build"
-  publish = "dist"
+  # Run from repo root; publish path explicit to avoid 404
+  command = "cd web-dashboard && npm install && npm run build"
+  publish = "web-dashboard/dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA: serve index.html for all routes (no 404 on refresh / deep links)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
 
 [[headers]]
   for = "/*"

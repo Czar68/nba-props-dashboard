@@ -65,13 +65,20 @@ try {
         throw "git push failed"
     }
     Write-Success "✅ Pushed. Netlify will build and go live (no password)."
-    Write-Info "   Site: https://dynamic-gingersnap-3ee837.netlify.app"
 } catch {
     Write-Error "❌ Push failed: $_"
     Write-Info "   Fix remote/credentials, then run again."
     exit 1
 }
 
+# Verification
+$deployUrl = "https://dynamic-gingersnap-3ee837.netlify.app"
 Write-Info ""
-Write-Info "Password: Disable at Site settings → Access & security → Password Protection → OFF"
+Write-Info "Deploy URL: $deployUrl"
+Write-Info "Build takes ~1–2 min. Then verify:"
+Write-Info "  curl -sI $deployUrl  (expect 200)"
+Write-Info "  Or open in browser (Feb 19 NBA slate)."
+Write-Info ""
+Write-Info "Repo link: Site configuration → Build & deploy → Repository: Czar68/nba-props-dashboard, branch: main"
+Write-Info "Password: Site settings → Access & security → Password Protection → OFF"
 Write-Success "Done."
