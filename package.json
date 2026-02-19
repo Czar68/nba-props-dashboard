@@ -10,7 +10,8 @@
     "dev-server": "ts-node src/server.ts",
     "start-server": "node dist/server.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "test:sgo": "ts-node src/test_sgo_pipeline.ts"
+    "test:sgo": "ts-node src/test_sgo_pipeline.ts",
+    "test-sheets": "python sheets_test.py"
   },
   "dependencies": {
     "axios": "^1.7.0",
