@@ -1,0 +1,12 @@
+# Netlify build config – Git push → auto-deploy (no password/drag-drop)
+# Site: dynamic-gingersnap-3ee837
+
+[build]
+  base    = "web-dashboard"
+  command = "npm run build"
+  publish = "dist"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"

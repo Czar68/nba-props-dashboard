@@ -1,10 +1,13 @@
 # deploy-nba.ps1
-# One-click Netlify deploy for NBA dashboard
-# Usage: .\deploy-nba.ps1
+# One-click Netlify deploy: build → git push → auto-live (netlify.toml)
+# Usage: .\deploy-nba.ps1 [-SkipBuild] [-Commit]
 
 param(
     [Parameter(Mandatory=$false)]
-    [switch]$SkipBuild = $false
+    [switch]$SkipBuild = $false,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$Commit = $false
 )
 
 function Write-Success { Write-Host $args -ForegroundColor Green }
@@ -16,12 +19,12 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ScriptDir
 
 Write-Info "=========================================="
-Write-Info "NBA Dashboard - Netlify Deploy"
+Write-Info "NBA Dashboard - Netlify Deploy (Git push)"
 Write-Info "=========================================="
 
-# Step 1: Build if not skipped
+# Step 1: Build if not skipped (optional; Netlify builds from source)
 if (-not $SkipBuild) {
-    Write-Info "[1/3] Building dashboard..."
+    Write-Info "[1/3] Building dashboard locally..."
     Push-Location web-dashboard
     try {
         npm run build
@@ -36,56 +39,39 @@ if (-not $SkipBuild) {
     }
     Pop-Location
 } else {
-    Write-Info "[1/3] Skipping build (--SkipBuild)"
+    Write-Info "[1/3] Skipping build (--SkipBuild); Netlify will build on push"
 }
 
-# Step 2: Verify dist exists
-$distPath = "web-dashboard\dist"
-if (-not (Test-Path $distPath)) {
-    Write-Error "❌ Dashboard dist folder not found: $distPath"
-    Write-Info "Run: .\run-nba.ps1 first, or cd web-dashboard && npm run build"
+# Step 2: Commit changes if requested
+if ($Commit) {
+    Write-Info "[2/3] Staging and committing..."
+    git add -A
+    $status = git status --porcelain
+    if ($status) {
+        git commit -m "deploy: NBA dashboard $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
+        Write-Success "✅ Changes committed"
+    } else {
+        Write-Info "   No changes to commit"
+    }
+} else {
+    Write-Info "[2/3] Skipping commit (use -Commit to add/commit before push)"
+}
+
+# Step 3: Push → Netlify auto-deploy (netlify.toml)
+Write-Info "[3/3] Pushing to origin (Netlify auto-deploy)..."
+try {
+    git push
+    if ($LASTEXITCODE -ne 0) {
+        throw "git push failed"
+    }
+    Write-Success "✅ Pushed. Netlify will build and go live (no password)."
+    Write-Info "   Site: https://dynamic-gingersnap-3ee837.netlify.app"
+} catch {
+    Write-Error "❌ Push failed: $_"
+    Write-Info "   Fix remote/credentials, then run again."
     exit 1
 }
 
-if (-not (Test-Path "$distPath\index.html")) {
-    Write-Error "❌ dist\index.html not found"
-    exit 1
-}
-
-Write-Success "✅ dist folder verified"
-
-# Step 3: Deploy instructions
 Write-Info ""
-Write-Info "[2/3] Netlify Deploy Instructions"
-Write-Info "=========================================="
-Write-Info ""
-Write-Info "OPTION A: Drag & Drop (Manual)"
-Write-Info "  1. Open: https://app.netlify.com/drop"
-Write-Info "  2. In Explorer, open: $((Resolve-Path $distPath).Path)"
-Write-Info "  3. Drag the ENTIRE 'dist' folder to Netlify Drop"
-Write-Info ""
-Write-Info "OPTION B: Netlify CLI (if installed)"
-Write-Info "  cd web-dashboard"
-Write-Info "  netlify deploy --dir=dist --prod"
-Write-Info ""
-Write-Info "Site: dynamic-gingersnap-3ee837"
-Write-Info "URL: https://dynamic-gingersnap-3ee837.netlify.app"
-Write-Info ""
-
-# Step 4: Verify env vars (reminder)
-Write-Info "[3/3] Environment Variables Check"
-Write-Info "=========================================="
-Write-Info "Ensure Netlify has:"
-Write-Info "  - GOOGLE_APPLICATION_CREDENTIALS (full SA JSON)"
-Write-Info "  - TEST_SPREADSHEET_ID (optional, for testing)"
-Write-Info ""
-Write-Info "Check: https://app.netlify.com/sites/dynamic-gingersnap-3ee837/settings/env"
-Write-Info ""
-
-# Open dist folder in Explorer
-Write-Info "Opening dist folder in Explorer..."
-Start-Process explorer.exe -ArgumentList (Resolve-Path $distPath).Path
-
-Write-Success ""
-Write-Success "✅ Ready to deploy!"
-Write-Info "Drag the dist folder to Netlify Drop, or use Netlify CLI"
+Write-Info "Password: Disable at Site settings → Access & security → Password Protection → OFF"
+Write-Success "Done."
