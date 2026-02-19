@@ -12,6 +12,6 @@
     "forceConsistentCasingInFileNames": true,
     "jsx": "react-jsx"
   },
-  "include": ["src/**/*", "web-dashboard/src/**/*"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "web-dashboard/dist"]
 }

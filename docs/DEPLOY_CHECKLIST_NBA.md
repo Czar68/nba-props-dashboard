@@ -18,21 +18,31 @@
 - `prizepicks-cards.csv` - Generated cards
 - `web-dashboard/dist/` - Built dashboard ready for Netlify
 
-### 2. Deploy to Netlify
+### 2. Link repo (first time only)
+1. **app.netlify.com/sites/dynamic-gingersnap-3ee837** → **Site configuration** → **Build & deploy** → **Repository**
+2. **Link to repo** → **GitHub** → **Czar68/nba-props-dashboard** → **Authorize** → **main** → **Save**
+3. **Deploy settings** → **Clear cache and deploy site** (triggers test build)
+
+### 3. Deploy to Netlify (git push → auto-build)
 ```powershell
-.\deploy-nba.ps1
+.\run-nba.ps1 -Sport NBA   # Generates web-dashboard/dist/
+git add .
+git commit -m "fix: netlify deploy Feb 19 NBA"
+git push origin main        # Auto-builds on Netlify
 ```
 
-**Options:**
-- `.\deploy-nba.ps1` - Builds then opens dist folder
-- `.\deploy-nba.ps1 -SkipBuild` - Skips build (if already built)
+Or use the deploy script (build + optional commit + push):
+```powershell
+.\deploy-nba.ps1            # Build + push
+.\deploy-nba.ps1 -Commit     # Build + add/commit + push
+.\deploy-nba.ps1 -SkipBuild  # Push only (Netlify builds from source)
+```
 
-**Manual Deploy:**
-1. Open: https://app.netlify.com/drop
-2. Drag `web-dashboard\dist` folder to Netlify Drop
-3. Get instant live URL
+### 4. Verify live
+- **Deploys** tab → **Latest** → **Published**
+- `curl -sI https://dynamic-gingersnap-3ee837.netlify.app` → expect **200 OK**
 
-### 3. Schedule Daily Run (6 PM)
+### 5. Schedule Daily Run (6 PM)
 ```powershell
 .\setup-scheduler.ps1
 ```
@@ -79,10 +89,10 @@ Start-ScheduledTask -TaskName "NBA Props Optimizer Daily"
 4. ✅ Verify Sheets push (if SA configured)
 
 ### After Netlify Deploy
-1. ✅ Visit live URL (e.g., `https://dynamic-gingersnap-3ee837.netlify.app`)
-2. ✅ Verify dashboard loads with today's games
-3. ✅ Check API endpoints (if using Netlify Functions)
-4. ✅ Verify Google Sheets integration (if using)
+1. ✅ **Deploys** tab → Latest deploy → **Published**
+2. ✅ `curl -sI https://dynamic-gingersnap-3ee837.netlify.app` → **200 OK**
+3. ✅ Open live URL in browser → dashboard loads (e.g. Feb 19 NBA slate)
+4. ✅ API / Sheets if used
 
 ---
 

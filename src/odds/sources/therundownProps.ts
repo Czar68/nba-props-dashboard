@@ -1,5 +1,6 @@
 // src/odds/sources/therundownProps.ts
 // TheRundown v2 API adapter for multi-sport player props as backup odds source
+// Docs: https://docs.therundown.io/guides/player-props
 
 import "dotenv/config";
 import fetch from "node-fetch";
@@ -16,6 +17,8 @@ function debugLog(message: string, ...args: any[]): void {
 }
 
 // TheRundown API configuration
+// Using v2 (recommended) - market-based model with player props support
+// Docs: https://docs.therundown.io/introduction
 const API_BASE = "https://therundown.io/api/v2";
 
 // Sport IDs from TheRundown API documentation
@@ -28,65 +31,51 @@ const SPORT_IDS: Record<Sport, number> = {
   'NCAAB': 5
 };
 
-// Book weights for consensus calculation (same as existing)
-const BOOK_WEIGHTS: Record<string, number> = {
-  "fanduel": 1.0,
-  "pinnacle": 0.7,
-  "circa": 0.7,
-  // All other books get 0.3 weight
+// Player prop market IDs (v2 market-based system)
+// Docs: https://docs.therundown.io/guides/player-props
+// Included: 29, 35, 38, 39, 93, 99, 297, 298 (Points, Rebounds, 3PT, Assists, PRA, PA, PR, RA)
+// Skipped: 1,2,3 (game lines), 33 (turnovers), 87,88 (DD/TD Yes/No), 94 (team totals), 98 (blocks)
+// Set THERUNDOWN_MARKETS=core to request only 29,35,38,39 (fewer points per call)
+const NBA_MARKETS_FULL = [29, 35, 38, 39, 93, 99, 297, 298];
+const NBA_MARKETS_CORE = [29, 35, 38, 39]; // Points, Rebounds, 3PT, Assists
+
+const PLAYER_PROP_MARKETS: Record<Sport, number[]> = {
+  NBA: process.env.THERUNDOWN_MARKETS === "core" ? NBA_MARKETS_CORE : NBA_MARKETS_FULL,
+  NHL: [], // TODO: Add NHL prop market IDs
+  NFL: [], // TODO: Add NFL prop market IDs
+  MLB: [], // TODO: Add MLB prop market IDs
+  NCAAB: [29, 35, 38, 39], // Points, Rebounds, 3PT, Assists (same skip list)
+  NCAAF: [] // TODO: Add NCAAF prop market IDs
 };
 
-function getBookWeight(book: string): number {
-  return BOOK_WEIGHTS[book.toLowerCase()] || 0.3;
+// Affiliate IDs (sportsbooks): 19=FanDuel, 23=DraftKings, 7=Pinnacle
+const AFFILIATE_IDS = "19,23,7";
+
+// Book weights for consensus calculation
+const BOOK_WEIGHTS: Record<string, number> = {
+  "19": 1.0,  // FanDuel
+  "23": 1.0,  // DraftKings
+  "7": 0.7,   // Pinnacle
+};
+
+function getBookWeight(affiliateId: string): number {
+  return BOOK_WEIGHTS[affiliateId] || 0.3;
 }
 
-// Sport-specific stat mappings from TheRundown market names to our internal stat categories
-const SPORT_STAT_MAPPINGS: Record<Sport, Record<string, StatCategory>> = {
-  NBA: {
-    "Player Points": "points",
-    "Player Rebounds": "rebounds",
-    "Player Assists": "assists",
-    "Player Threes": "threes",
-    "Player Blocks": "blocks",
-    "Player Steals": "steals",
-    "Player Turnovers": "turnovers",
-    "Player Points + Rebounds": "pr",
-    "Player Points + Assists": "pa",
-    "Player Rebounds + Assists": "ra",
-    "Player Points + Rebounds + Assists": "pra",
-  },
-  NHL: {
-    "Player Goals": "goals",
-    "Player Assists": "assists",
-    "Player Points": "points",
-    "Player Shots on Goal": "shots_on_goal",
-    "Player Saves": "saves",
-    "Player Plus/Minus": "plus_minus",
-    "Player Penalty Minutes": "penalty_minutes",
-    "Player Time on Ice": "time_on_ice",
-  },
-  NFL: {
-    "Player Pass Yards": "pass_yards",
-    "Player Pass TDs": "pass_tds",
-    "Player Rush Yards": "rush_yards",
-    "Player Rec Yards": "rec_yards",
-    "Player Receptions": "receptions",
-  },
-  MLB: {
-    // Baseball stats would go here
-  },
-  NCAAB: {
-    "Player Points": "points",
-    "Player Rebounds": "rebounds",
-    "Player Assists": "assists",
-    "Player Threes": "threes",
-  },
-  NCAAF: {
-    // College football stats would go here
-  }
+// Sport-specific stat mappings from TheRundown market IDs to our internal stat categories
+const MARKET_ID_TO_STAT: Record<number, StatCategory> = {
+  // NBA (we skip 33, 87, 88, 98 per user request)
+  29: "points",      // Player Points
+  35: "rebounds",    // Player Rebounds
+  38: "threes",      // Three Pointers Made
+  39: "assists",     // Player Assists
+  93: "pra",         // Player PRA (Points + Rebounds + Assists)
+  99: "pa",          // Player Points + Assists
+  297: "pr",         // Player Points + Rebounds
+  298: "ra",         // Player Rebounds + Assists
 };
 
-// Statistical utilities (same as existing consensus logic)
+// Statistical utilities for consensus calculation
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
@@ -100,32 +89,52 @@ function mad(values: number[]): number {
   return median(values.map(v => Math.abs(v - med)));
 }
 
-// Interface for TheRundown API responses
-interface TheRundownEvent {
+// V2 API Response Interfaces
+interface TheRundownV2Price {
+  price: number;
+  is_main_line: boolean;
+  updated_at: string;
+}
+
+interface TheRundownV2Line {
+  value: string;
+  prices: Record<string, TheRundownV2Price>;
+}
+
+interface TheRundownV2Participant {
+  id: number;
+  name: string;
+  type: string; // "TYPE_OVER" | "TYPE_UNDER" | "TYPE_PLAYER"
+  lines: TheRundownV2Line[];
+}
+
+interface TheRundownV2Market {
+  market_id: number;
+  name: string;
+  period_id: number;
+  participants: TheRundownV2Participant[];
+}
+
+interface TheRundownV2Team {
+  id: number;
+  name: string;
+}
+
+interface TheRundownV2Event {
   event_id: string;
   sport_id: number;
-  event_name: string;
-  start_date: string;
+  teams: TheRundownV2Team[];
+  markets?: TheRundownV2Market[];
 }
 
-interface TheRundownOdds {
-  market_name: string;
-  line: number;
-  odds: number;
-  bookmaker_key: string;
+interface TheRundownV2Response {
+  events: TheRundownV2Event[];
+  meta?: {
+    delta_last_id?: string;
+  };
 }
 
-interface TheRundownPlayerOdds {
-  player_name: string;
-  odds: TheRundownOdds[];
-}
-
-interface TheRundownResponse {
-  events: TheRundownEvent[];
-  odds: TheRundownPlayerOdds[];
-}
-
-// Main function to fetch player props from TheRundown for multiple sports
+// Main function to fetch player props from TheRundown v2 API
 export async function getPlayerPropsFromTheRundown(sports: Sport[] = ['NBA']): Promise<SgoPlayerPropOdds[]> {
   const apiKey = process.env.THERUNDOWN_API_KEY;
   
@@ -143,14 +152,21 @@ export async function getPlayerPropsFromTheRundown(sports: Sport[] = ['NBA']): P
       continue;
     }
 
-    debugLog(`Fetching ${sport} player props (sport_id: ${sportId})`);
+    const marketIds = PLAYER_PROP_MARKETS[sport];
+    if (!marketIds || marketIds.length === 0) {
+      debugLog(`No player prop markets configured for ${sport}, skipping`);
+      continue;
+    }
+
+    debugLog(`Fetching ${sport} player props (sport_id: ${sportId}, markets: ${marketIds.join(',')})`);
     
     try {
-      const sportResults = await fetchSportPlayerProps(sport, sportId, apiKey);
+      const sportResults = await fetchSportPlayerPropsV2(sport, sportId, marketIds, apiKey);
       allResults.push(...sportResults);
     } catch (error) {
       debugLog(`Error fetching ${sport} props:`, error);
       console.error(`getPlayerPropsFromTheRundown: Error fetching ${sport} props:`, error);
+      // Don't throw - continue to next sport
     }
   }
 
@@ -158,150 +174,203 @@ export async function getPlayerPropsFromTheRundown(sports: Sport[] = ['NBA']): P
   return allResults;
 }
 
-async function fetchSportPlayerProps(sport: Sport, sportId: number, apiKey: string): Promise<SgoPlayerPropOdds[]> {
-  // Fetch events for the sport
-  const eventsUrl = `${API_BASE}/sports/${sportId}/events`;
-  console.log(`[TheRundown] Calling: ${eventsUrl}`);
-  const eventsResponse = await fetch(eventsUrl, {
-    headers: {
-      "x-api-key": apiKey,
-    },
-  });
+async function fetchSportPlayerPropsV2(
+  sport: Sport,
+  sportId: number,
+  marketIds: number[],
+  apiKey: string
+): Promise<SgoPlayerPropOdds[]> {
+  // V2 endpoint: GET /sports/{sport_id}/events/{date}?market_ids=...&affiliate_ids=...
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD format
+  const marketIdsParam = marketIds.join(',');
+  const eventsUrl = `${API_BASE}/sports/${sportId}/events/${today}?key=${encodeURIComponent(apiKey)}&market_ids=${marketIdsParam}&affiliate_ids=${AFFILIATE_IDS}&offset=300`;
+  
+  console.log(`[TheRundown] Calling: ${API_BASE}/sports/${sportId}/events/${today}?market_ids=${marketIdsParam}&affiliate_ids=${AFFILIATE_IDS}&offset=300&key=***`);
+  
+  const eventsResponse = await fetch(eventsUrl);
 
   if (!eventsResponse.ok) {
+    const errorText = await eventsResponse.text();
+    if (eventsResponse.status === 429) {
+      console.warn(`[TheRundown] 429 = Daily data point limit reached. ${errorText.substring(0, 150)}`);
+      console.warn(`[TheRundown] Returning no data (usage NOT recorded). Limit resets at midnight UTC or upgrade plan.`);
+      return []; // Don't throw - graceful degradation, no usage recorded
+    }
     if (eventsResponse.status === 404) {
-      console.log(`[TheRundown] 404 = No events for ${sport} (sport_id=${sportId}) - may be no games scheduled`);
+      console.log(`[TheRundown] 404 = No events for ${sport} (sport_id=${sportId}) on ${today} - may be no games scheduled`);
+      console.log(`[TheRundown] Response: ${errorText.substring(0, 200)}`);
+    } else if (eventsResponse.status === 401) {
+      console.error(`[TheRundown] 401 = Authentication failed - check THERUNDOWN_API_KEY`);
+      console.error(`[TheRundown] Response: ${errorText.substring(0, 200)}`);
+    } else {
+      console.error(`[TheRundown] ${eventsResponse.status} error: ${errorText.substring(0, 300)}`);
     }
     throw new Error(`Events API failed: ${eventsResponse.status} ${eventsResponse.statusText}`);
   }
 
-  const eventsData = await eventsResponse.json() as TheRundownEvent[];
-  debugLog(`Found ${eventsData.length} ${sport} events`);
+  const data = await eventsResponse.json() as TheRundownV2Response;
+  
+  // Debug: Log response structure
+  console.log(`[TheRundown] Response received - events: ${data.events?.length || 0}, keys: ${Object.keys(data).join(', ')}`);
+  if (data.events && data.events.length > 0) {
+    const firstEvent = data.events[0];
+    console.log(`[TheRundown] First event: id=${firstEvent.event_id}, markets=${firstEvent.markets?.length || 0}`);
+    if (firstEvent.markets && firstEvent.markets.length > 0) {
+      console.log(`[TheRundown] First market: id=${firstEvent.markets[0].market_id}, participants=${firstEvent.markets[0].participants?.length || 0}`);
+    }
+  }
 
-  if (eventsData.length === 0) {
+  if (!data.events || data.events.length === 0) {
+    console.log(`[TheRundown] No events returned for ${sport} on ${today}`);
     return [];
   }
 
-  // Fetch odds for all events
-  const eventIds = eventsData.map((e: TheRundownEvent) => e.event_id).join(',');
-  const oddsUrl = `${API_BASE}/events/${eventIds}/odds`;
-  const oddsResponse = await fetch(oddsUrl, {
-    headers: {
-      "x-api-key": apiKey,
-    },
-  });
-
-  if (!oddsResponse.ok) {
-    throw new Error(`Odds API failed: ${oddsResponse.status} ${oddsResponse.statusText}`);
-  }
-
-  const oddsData = await oddsResponse.json() as TheRundownResponse;
-  debugLog(`Found ${oddsData.odds.length} ${sport} player odds entries`);
-
-  return processTheRundownOdds(sport, eventsData, oddsData.odds);
+  // Process v2 market-based response structure
+  return processTheRundownV2Response(sport, data.events);
 }
 
-function processTheRundownOdds(
-  sport: Sport, 
-  events: TheRundownEvent[], 
-  odds: TheRundownPlayerOdds[]
+function processTheRundownV2Response(
+  sport: Sport,
+  events: TheRundownV2Event[]
 ): SgoPlayerPropOdds[] {
-  const statMapping = SPORT_STAT_MAPPINGS[sport];
-  if (!statMapping) {
-    debugLog(`No stat mapping for ${sport}, skipping processing`);
-    return [];
-  }
-
-  // Create event lookup
-  const eventMap = new Map(events.map(e => [e.event_id, e]));
-
   const results: SgoPlayerPropOdds[] = [];
+  let eventsWithMarkets = 0;
+  let totalMarkets = 0;
 
-  for (const playerOdds of odds) {
-    // Group odds by market and line for consensus calculation
-    const marketGroups = new Map<string, TheRundownOdds[]>();
-    
-    for (const odd of playerOdds.odds) {
-      const mappedStat = statMapping[odd.market_name];
-      if (!mappedStat) {
-        debugLog(`Unknown market: ${odd.market_name} for ${sport}`);
-        continue;
-      }
-
-      const key = `${mappedStat}_${odd.line}`;
-      if (!marketGroups.has(key)) {
-        marketGroups.set(key, []);
-      }
-      marketGroups.get(key)!.push(odd);
+  for (const event of events) {
+    if (!event.markets || event.markets.length === 0) {
+      debugLog(`Event ${event.event_id} has no markets`);
+      continue;
     }
+    
+    eventsWithMarkets++;
+    totalMarkets += event.markets.length;
 
-    // Process each market group to create consensus odds
-    for (const [marketKey, marketOdds] of marketGroups) {
-      if (marketOdds.length < 2) {
-        debugLog(`Skipping ${marketKey}: only ${marketOdds.length} book(s)`);
+    // Extract teams for context
+    const homeTeam = event.teams[1]?.name || null;
+    const awayTeam = event.teams[0]?.name || null;
+
+    for (const market of event.markets) {
+      const statCategory = MARKET_ID_TO_STAT[market.market_id];
+      if (!statCategory) {
+        debugLog(`Unknown market_id ${market.market_id} for ${sport}, skipping`);
         continue;
       }
 
-      const [statType, lineStr] = marketKey.split('_');
-      const line = parseFloat(lineStr);
-      const stat = statType as StatCategory;
+      // V2 API separates Over and Under into different participants
+      // Strategy: Collect all participants first, then pair by player+line
+      const playerLineMap = new Map<string, { 
+        over?: number; 
+        under?: number; 
+        stat: StatCategory; 
+        line: number; 
+        eventId: string; 
+        marketId: number;
+        playerName: string;
+      }>();
 
-      // Calculate consensus using median and MAD
-      const overOdds = marketOdds.map(o => o.odds);
-      const underOdds = marketOdds.map(o => -o.odds); // Convert to under odds
+      // First pass: Collect all participant data
+      for (const participant of market.participants) {
+        // Extract player name (remove "Over"/"Under" suffix)
+        let playerName = participant.name;
+        for (const suffix of [" Over", " Under"]) {
+          playerName = playerName.replace(suffix, "");
+        }
 
-      const medianOver = median(overOdds);
-      const medianUnder = median(underOdds);
-      const madOver = mad(overOdds);
-      const madUnder = mad(underOdds);
+        const isOver = participant.type === "TYPE_OVER" || participant.name.includes("Over");
 
-      // Filter outliers using MAD (same as existing logic)
-      const filteredOver = marketOdds.filter(o => Math.abs(o.odds - medianOver) <= 2 * madOver);
-      const filteredUnder = marketOdds.filter(o => Math.abs(-o.odds - medianUnder) <= 2 * madUnder);
+        // Process each line (over/under value) for this player
+        for (const line of participant.lines) {
+          const lineValue = parseFloat(line.value);
+          if (isNaN(lineValue)) {
+            continue;
+          }
 
-      // Calculate weighted averages
-      let finalOverOdds = 0;
-      let finalUnderOdds = 0;
-      let totalWeight = 0;
+          const key = `${playerName}_${lineValue}`;
+          
+          // Initialize entry if needed
+          if (!playerLineMap.has(key)) {
+            playerLineMap.set(key, {
+              stat: statCategory,
+              line: lineValue,
+              eventId: event.event_id,
+              marketId: market.market_id,
+              playerName: playerName
+            });
+          }
 
-      for (const odd of marketOdds) {
-        const weight = getBookWeight(odd.bookmaker_key);
-        finalOverOdds += odd.odds * weight;
-        finalUnderOdds += -odd.odds * weight;
-        totalWeight += weight;
+          const entry = playerLineMap.get(key)!;
+          
+          // Calculate consensus odds for this side (over or under)
+          let consensus = 0;
+          let totalWeight = 0;
+          let validPrices = 0;
+
+          for (const [affiliateId, priceObj] of Object.entries(line.prices)) {
+            const price = priceObj.price;
+            // Sentinel value 0.0001 means line not available
+            if (price === 0.0001) {
+              continue;
+            }
+
+            const weight = getBookWeight(affiliateId);
+            consensus += price * weight;
+            totalWeight += weight;
+            validPrices++;
+          }
+
+          if (totalWeight > 0 && validPrices > 0) {
+            consensus = Math.round(consensus / totalWeight);
+            if (isOver) {
+              entry.over = consensus;
+            } else {
+              entry.under = consensus;
+            }
+            debugLog(`Collected ${isOver ? 'over' : 'under'} for ${playerName} ${statCategory} ${lineValue}: ${consensus} (${validPrices} books)`);
+          } else {
+            debugLog(`No valid prices for ${playerName} ${statCategory} ${lineValue} ${isOver ? 'over' : 'under'}`);
+          }
+        }
       }
 
-      if (totalWeight > 0) {
-        finalOverOdds /= totalWeight;
-        finalUnderOdds /= totalWeight;
+      // Second pass: Create results only for entries with both over AND under
+      let pairedCount = 0;
+      let unpairedCount = 0;
+      for (const [key, entry] of playerLineMap) {
+        if (entry.over !== undefined && entry.under !== undefined) {
+          const result: SgoPlayerPropOdds = {
+            sport,
+            player: entry.playerName,
+            team: null,
+            opponent: null,
+            league: sport,
+            stat: entry.stat,
+            line: entry.line,
+            overOdds: entry.over,
+            underOdds: entry.under,
+            book: "consensus",
+            eventId: entry.eventId,
+            marketId: entry.marketId.toString(),
+            selectionIdOver: null,
+            selectionIdUnder: null,
+          };
+          results.push(result);
+          pairedCount++;
+        } else {
+          unpairedCount++;
+          if (unpairedCount <= 3) { // Log first 3 unpaired for debugging
+            console.log(`[TheRundown] Unpaired: ${key} - has over=${entry.over !== undefined}, under=${entry.under !== undefined}`);
+          }
+        }
       }
-
-      // Find the event for this player (use first event as fallback)
-      const event = events[0]; // Simplified - in full implementation would match player to specific event
-
-      const result: SgoPlayerPropOdds = {
-        sport,
-        player: playerOdds.player_name,
-        team: null, // TheRundown doesn't provide team in this endpoint
-        opponent: null,
-        league: sport,
-        stat,
-        line,
-        overOdds: Math.round(finalOverOdds),
-        underOdds: Math.round(finalUnderOdds),
-        book: "consensus",
-        eventId: event?.event_id || null,
-        marketId: null,
-        selectionIdOver: null,
-        selectionIdUnder: null,
-      };
-
-      results.push(result);
-      debugLog(`Created consensus for ${playerOdds.player_name} ${stat} ${line}: ${finalOverOdds}/${finalUnderOdds}`);
+      if (pairedCount > 0) {
+        console.log(`[TheRundown] Market ${market.market_id} (${statCategory}): ${pairedCount} paired, ${unpairedCount} unpaired`);
+      }
     }
   }
 
-  debugLog(`Processed ${results.length} ${sport} player prop markets`);
+  console.log(`[TheRundown] Processed ${results.length} player props from ${eventsWithMarkets} events (${totalMarkets} total markets)`);
+  debugLog(`Processed ${results.length} ${sport} player prop markets from v2 API`);
   return results;
 }
 

@@ -311,17 +311,19 @@ async function fetchFreshOdds(sports) {
     try {
         odds_cache_1.OddsCache.logApiCall("TheRundown", fallbackReason);
         const backupRows = await (0, therundownProps_1.getPlayerPropsFromTheRundown)(sports);
-        // Record TheRundown usage (always record usage, even when forced)
-        odds_cache_1.oddsCache.recordTheRundownUsage(estimatedDataPoints);
         apiCalls.push({
             endpoint: "TheRundown",
             timestamp: new Date().toISOString(),
             reason: fallbackReason
         });
+        // CRITICAL: Only record usage when we successfully got data
+        // Don't burn quota on 401/404/auth errors or empty responses
         if (backupRows.length === 0) {
-            console.log("mergeOddsWithProps: TheRundown backup also returned no data");
+            console.log("mergeOddsWithProps: TheRundown backup also returned no data (usage NOT recorded)");
             return { odds: [], providerUsed: "none" };
         }
+        // Successfully got data - record usage now
+        odds_cache_1.oddsCache.recordTheRundownUsage(estimatedDataPoints);
         // Convert SgoPlayerPropOdds to MergedPick format
         const merged = [];
         for (const market of backupRows) {

@@ -82,8 +82,9 @@ try {
     
     # Show sample games if CSV exists
     if ($legCount -gt 0) {
-        $sampleLegs = Import-Csv $legsCsv -TotalCount 5
-        Write-Info "   Sample games: $($sampleLegs[0..2].gameId -join ', ')"
+        $sampleLegs = Import-Csv $legsCsv | Select-Object -First 5
+        $games = $sampleLegs | ForEach-Object { $_.gameId } | Select-Object -First 3
+        Write-Info "   Sample games: $($games -join ', ')"
     }
 } catch {
     Write-Error "❌ Optimizer failed: $_"

@@ -16,6 +16,7 @@ function debugLog(message: string, ...args: any[]): void {
 }
 
 // TheRundown API configuration
+// Use v2 only - v1 /sports/{id}/dates calls in logs are from elsewhere (e.g. sports-odds-api or another app)
 const API_BASE = "https://therundown.io/api/v2";
 const NBA_SPORT_ID = 4; // From API documentation
 
